@@ -13,16 +13,23 @@ app = FastAPI()
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# Keyword → script filename mapping (updated for GH suffix)
-SCRIPT_MAP = {
-    "recap": "recapsGH.py",
-    "interval": "interval_detailsGH.py",
-    "detail": "interval_detailsGH.py",
+# Map keyword → script filename (updated for GH suffix)
+IMPORT_SCRIPTS = {
+    "recaps": "recapsGH.py",
+    "interval_details": "interval_detailsGH.py",
     "time": "import_timeGH.py",
     "pason": "import_pason_codesGH.py",
-    "code": "import_pason_codesGH.py",
 }
 
+# Simple API key protection (optional - remove dependencies=... if you want open access)
+API_KEY = "Momentum2012"  # your key
+
+def verify_api_key(x_api_key: str = Header(None)):
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    return x_api_key
+
+# Root page - simple drag-drop UI
 @app.get("/", response_class=HTMLResponse)
 async def root():
     return """
@@ -98,7 +105,7 @@ async def root():
                         method: 'POST',
                         body: formData,
                         headers: {
-                            'x-api-key': 'Momentum2012'  // CHANGE THIS TO MATCH YOUR API_KEY
+                            'x-api-key': 'Momentum2012'  // Your key
                         }
                     });
 
@@ -140,7 +147,7 @@ async def root():
 
 @app.post("/upload")
 async def upload_files(files: List[UploadFile] = File(...), x_api_key: str = Header(None)):
-    if x_api_key != "Momentum2012":  # CHANGE THIS TO MATCH THE KEY IN THE JS
+    if x_api_key != "Momentum2012":
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
     results = []
@@ -203,6 +210,5 @@ async def upload_files(files: List[UploadFile] = File(...), x_api_key: str = Hea
 
     return {"message": f"Processed {len(files)} file(s)", "details": results}
 
-# Run locally with: uvicorn app:app --reload
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
