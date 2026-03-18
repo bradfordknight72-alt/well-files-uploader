@@ -29,12 +29,12 @@ app = FastAPI()
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# Map keyword → script filename (updated for GH suffix)
+# Map keyword → script filename (updated for GH suffix + absolute paths)
 IMPORT_SCRIPTS = {
-    "recaps": "recapsGH.py",
-    "interval_details": "interval_detailsGH.py",
-    "time": "import_timeGH.py",
-    "pason": "import_pason_codesGH.py",
+    "recaps": os.path.abspath("recapsGH.py"),
+    "interval_details": os.path.abspath("interval_detailsGH.py"),
+    "time": os.path.abspath("import_timeGH.py"),
+    "pason": os.path.abspath("import_pason_codesGH.py"),
 }
 
 # Simple API key protection (optional - remove dependencies=... if you want open access)
