@@ -30,10 +30,10 @@ SCRIPT_MAP = {
 # Your import scripts (full paths on Render - they will be in the same repo)
 # These are relative to the app root
 IMPORT_SCRIPTS = {
-    "recaps": "./recaps.py",
-    "interval_details": "./interval_details.py",
-    "time": "./import_time.py",
-    "pason": "./import_pason_codes.py",
+    "recaps": "./recapsGH.py",
+    "interval_details": "./interval_detailsGH.py",
+    "time": "./import_timeGH.py",
+    "pason": "./import_pason_codesGH.py",
 }
 
 # Simple API key protection
