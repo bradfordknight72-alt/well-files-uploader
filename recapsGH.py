@@ -1353,6 +1353,7 @@ Skipped (already in DB): {skipped}
 Failed: {failed}
 """
     print(summary)
+    
     logger.info(summary.strip())
 
 if __name__ == "__main__":
