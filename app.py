@@ -16,20 +16,17 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 logger = logging.getLogger(__name__)
-
 console = logging.StreamHandler()
 console.setLevel(logging.INFO)
 logger.addHandler(console)
 
 app = FastAPI()
 
-# ... rest of your code ...
-
 # Folders where uploaded files will be moved before running the import
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# Map keyword → script filename (updated for GH suffix + absolute paths)
+# Map keyword → script filename (using absolute paths for Render reliability)
 IMPORT_SCRIPTS = {
     "recaps": os.path.abspath("recapsGH.py"),
     "interval_details": os.path.abspath("interval_detailsGH.py"),
@@ -37,8 +34,8 @@ IMPORT_SCRIPTS = {
     "pason": os.path.abspath("import_pason_codesGH.py"),
 }
 
-# Simple API key protection (optional - remove dependencies=... if you want open access)
-API_KEY = "Momentum2012"  # your key
+# Simple API key protection
+API_KEY = "Momentum2012"
 
 def verify_api_key(x_api_key: str = Header(None)):
     if x_api_key != API_KEY:
@@ -165,6 +162,7 @@ async def root():
 async def upload_files(files: List[UploadFile] = File(...), x_api_key: str = Header(None)):
     logger.info(f"Current working directory: {os.getcwd()}")
     logger.info(f"Files in current directory: {os.listdir('.')}")
+
     if x_api_key != "Momentum2012":
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
@@ -204,35 +202,17 @@ async def upload_files(files: List[UploadFile] = File(...), x_api_key: str = Hea
             if not script_path or not os.path.exists(script_path):
                 results.append(f"{file.filename}: script not found for {script}")
                 continue
-            
-            # Use absolute path to avoid working directory issues
+
+            # Use absolute path to fix Render path resolution issues
             script_abs_path = os.path.abspath(script_path)
-            logger.info(f"Running script at absolute path: {script_abs_path}")
-            
+            logger.info(f"Attempting to run script at absolute path: {script_abs_path}")
+
             try:
                 result = subprocess.run(
                     ["python", script_abs_path],
                     capture_output=True,
                     text=True,
                     timeout=600
-                )
-                if result.returncode == 0:
-                    results.append(f"{file.filename}: imported successfully ({script})")
-                    results.append(result.stdout)
-                else:
-                    results.append(f"{file.filename}: import failed\n{result.stderr}")
-            except subprocess.TimeoutExpired:
-                results.append(f"{file.filename}: import timed out")
-            except Exception as e:
-                results.append(f"{file.filename}: error running {script} - {str(e)}")
-
-            # Run the script
-            try:
-                result = subprocess.run(
-                    ["python", script_path],
-                    capture_output=True,
-                    text=True,
-                    timeout=600  # 10 min timeout per file
                 )
                 if result.returncode == 0:
                     results.append(f"{file.filename}: imported successfully ({script})")
