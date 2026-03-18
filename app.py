@@ -6,8 +6,24 @@ import os
 from pathlib import Path
 import subprocess
 from typing import List
+import logging
+
+# Logging setup (this must come early)
+logging.basicConfig(
+    filename='app.log',  # optional - logs to file on Render
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
+console = logging.StreamHandler()
+console.setLevel(logging.INFO)
+logger.addHandler(console)
 
 app = FastAPI()
+
+# ... rest of your code ...
 
 # Folders where uploaded files will be moved before running the import
 UPLOAD_DIR = Path("uploads")
