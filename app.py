@@ -204,6 +204,27 @@ async def upload_files(files: List[UploadFile] = File(...), x_api_key: str = Hea
             if not script_path or not os.path.exists(script_path):
                 results.append(f"{file.filename}: script not found for {script}")
                 continue
+            
+            # Use absolute path to avoid working directory issues
+            script_abs_path = os.path.abspath(script_path)
+            logger.info(f"Running script at absolute path: {script_abs_path}")
+            
+            try:
+                result = subprocess.run(
+                    ["python", script_abs_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=600
+                )
+                if result.returncode == 0:
+                    results.append(f"{file.filename}: imported successfully ({script})")
+                    results.append(result.stdout)
+                else:
+                    results.append(f"{file.filename}: import failed\n{result.stderr}")
+            except subprocess.TimeoutExpired:
+                results.append(f"{file.filename}: import timed out")
+            except Exception as e:
+                results.append(f"{file.filename}: error running {script} - {str(e)}")
 
             # Run the script
             try:
