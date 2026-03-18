@@ -1,6 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Header, Depends
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
 import uvicorn
 import shutil
 import os
@@ -10,41 +9,20 @@ from typing import List
 
 app = FastAPI()
 
-# Mount static folder (optional - for serving HTML/CSS/JS if you want a separate frontend)
-# app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Folders
+# Folders where uploaded files will be moved before running the import
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# Map filename keywords to script names (adjust as needed)
+# Keyword → script filename mapping (updated for GH suffix)
 SCRIPT_MAP = {
-    "recap": "recaps",
-    "interval": "interval_details",
-    "detail": "interval_details",
-    "time": "time",
-    "pason": "pason",
-    "code": "pason",
+    "recap": "recapsGH.py",
+    "interval": "interval_detailsGH.py",
+    "detail": "interval_detailsGH.py",
+    "time": "import_timeGH.py",
+    "pason": "import_pason_codesGH.py",
+    "code": "import_pason_codesGH.py",
 }
 
-# Your import scripts (full paths on Render - they will be in the same repo)
-# These are relative to the app root
-IMPORT_SCRIPTS = {
-    "recaps": "./recapsGH.py",
-    "interval_details": "./interval_detailsGH.py",
-    "time": "./import_timeGH.py",
-    "pason": "./import_pason_codesGH.py",
-}
-
-# Simple API key protection
-API_KEY = "Momentum2012"  # CHANGE THIS TO A STRONG, SHARED KEY
-
-def verify_api_key(x_api_key: str = Header(None)):
-    if x_api_key != API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    return x_api_key
-
-# Root page - simple drag-drop UI
 @app.get("/", response_class=HTMLResponse)
 async def root():
     return """
@@ -120,7 +98,7 @@ async def root():
                         method: 'POST',
                         body: formData,
                         headers: {
-                            'x-api-key': 'your-secret-team-key-2026'  // CHANGE THIS TO MATCH API_KEY
+                            'x-api-key': 'your-secret-team-key-2026'  // CHANGE THIS TO MATCH YOUR API_KEY
                         }
                     });
 
@@ -161,8 +139,12 @@ async def root():
     """
 
 @app.post("/upload")
-async def upload_files(files: List[UploadFile] = File(...), api_key: str = Depends(verify_api_key)):
+async def upload_files(files: List[UploadFile] = File(...), x_api_key: str = Header(None)):
+    if x_api_key != "Momentum2012":  # CHANGE THIS TO MATCH THE KEY IN THE JS
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
     results = []
+
     for file in files:
         file_path = UPLOAD_DIR / file.filename
         try:
@@ -170,21 +152,20 @@ async def upload_files(files: List[UploadFile] = File(...), api_key: str = Depen
                 shutil.copyfileobj(file.file, f)
 
             lower_name = file.filename.lower()
-
             script = None
             target_folder = None
 
             if 'recap' in lower_name:
-                script = "recaps"
+                script = "recapsGH.py"
                 target_folder = UPLOAD_DIR / "recaps"
             elif 'interval' in lower_name or 'detail' in lower_name:
-                script = "interval_details"
+                script = "interval_detailsGH.py"
                 target_folder = UPLOAD_DIR / "interval_details"
             elif 'time' in lower_name:
-                script = "time"
+                script = "import_timeGH.py"
                 target_folder = UPLOAD_DIR / "time"
             elif 'pason' in lower_name or 'code' in lower_name:
-                script = "pason"
+                script = "import_pason_codesGH.py"
                 target_folder = UPLOAD_DIR / "pason"
             else:
                 results.append(f"{file.filename}: no matching folder/script")
@@ -217,13 +198,11 @@ async def upload_files(files: List[UploadFile] = File(...), api_key: str = Depen
             except Exception as e:
                 results.append(f"{file.filename}: error running {script} - {str(e)}")
 
-            # Optional: delete file after processing
-            # os.remove(target_path)
-
         except Exception as e:
             results.append(f"{file.filename}: upload error - {str(e)}")
 
     return {"message": f"Processed {len(files)} file(s)", "details": results}
 
+# Run locally with: uvicorn app:app --reload
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
