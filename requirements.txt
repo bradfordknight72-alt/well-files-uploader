@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+python-multipart
+pandas
+openpyxl
+tqdm
+python-Levenshtein
+psycopg2-binary
