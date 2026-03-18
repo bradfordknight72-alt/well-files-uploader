@@ -147,6 +147,9 @@ async def root():
 
 @app.post("/upload")
 async def upload_files(files: List[UploadFile] = File(...), x_api_key: str = Header(None)):
+    import os
+logger.info(f"Current working directory: {os.getcwd()}")
+logger.info(f"Files in current directory: {os.listdir('.')}")
     if x_api_key != "Momentum2012":
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
