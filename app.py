@@ -37,7 +37,7 @@ IMPORT_SCRIPTS = {
 }
 
 # Simple API key protection
-API_KEY = "your-secret-team-key-2026"  # CHANGE THIS TO A STRONG, SHARED KEY
+API_KEY = "Momentum2012"  # CHANGE THIS TO A STRONG, SHARED KEY
 
 def verify_api_key(x_api_key: str = Header(None)):
     if x_api_key != API_KEY:
