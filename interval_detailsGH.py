@@ -1,4 +1,4 @@
-# interval_detailsGH.py - FINAL MASTER MERGE (MasterProducts lookup + full summary skip)
+# interval_detailsGH.py - FINAL MASTER MERGE (no transaction abort, full summary skip, MasterProducts lookup)
 
 import pandas as pd
 import os
@@ -52,18 +52,16 @@ def parse_date_range(s):
     return clean_value(parts[0].strip()), clean_value(parts[1].strip()) if len(parts)>1 else None
 
 def get_master_product(cur, product_name):
-    """Lookup in MasterProducts for standardized name and category"""
     cur.execute("""
         SELECT product_name, category 
         FROM "MasterProducts" 
-        WHERE product_name ILIKE %s 
-           OR %s = ANY(variations)
+        WHERE product_name ILIKE %s OR %s = ANY(variations)
         LIMIT 1
     """, (product_name, product_name))
     row = cur.fetchone()
     if row:
         return row[0], row[1]
-    return product_name, None  # fallback
+    return product_name, None
 
 def process_interval_folder(folder_path):
     processed_dir = os.path.join(folder_path, "processed")
@@ -93,7 +91,6 @@ def upload_interval_details(file_path):
     df = pd.read_excel(file_path, sheet_name='Sheet1', header=None)
     logger.info(f"Loaded {len(df)} rows from Sheet1")
 
-    # Extract well_id from row 2, column H
     well_name_raw = clean_value(df.iloc[1, 7])
     if not well_name_raw:
         logger.warning("No well name found")
@@ -115,7 +112,6 @@ def upload_interval_details(file_path):
     cur.close()
     conn.close()
 
-    # Interval names on row 5, starting column D, every 4 columns
     interval_row = 4
     interval_cols = [c for c in range(3, df.shape[1], 4) if clean_value(df.iloc[interval_row, c])]
 
@@ -166,7 +162,7 @@ def upload_interval_details(file_path):
 
         total_inserted += 1
 
-        # Products - Column A = product, B = uom, col = Used, col + 3 = Cost
+        # Products - strict bounds + aggressive summary skip
         product_batch = []
         for r in range(interval_row + 12, len(df)):
             if r >= len(df):
@@ -191,7 +187,6 @@ def upload_interval_details(file_path):
             if qty is None and cost is None:
                 continue
 
-            # MasterProducts lookup for standardized name and category
             master_name, category = get_master_product(cur, product)
             product_batch.append((well_id, interval_id, interval_name, master_name, uom, qty, cost, category))
 
@@ -201,6 +196,7 @@ def upload_interval_details(file_path):
                     INSERT INTO "IntervalProducts" 
                     (well_id, interval_id, interval_name, product, uom, quantity, cost, category)
                     VALUES %s
+                    ON CONFLICT (well_id, interval_id, product) DO NOTHING
                 """, product_batch)
                 conn.commit()
                 logger.info(f"Inserted {len(product_batch)} products for {interval_name}")
