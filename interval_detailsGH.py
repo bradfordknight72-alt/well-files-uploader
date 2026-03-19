@@ -1,4 +1,4 @@
-# interval_detailsGH.py - FINAL VERSION with cleanup (old files moved to processed/)
+# interval_detailsGH.py - COMPLETE FINAL MERGE SCRIPT (all issues fixed)
 
 import pandas as pd
 import os
@@ -67,7 +67,6 @@ def process_interval_folder(folder_path):
             try:
                 inserted = upload_interval_details(fpath)
                 logger.info(f"SUCCESS: {fname} → {inserted} intervals")
-                # Cleanup: move to processed folder
                 move(fpath, os.path.join(processed_dir, fname))
                 logger.info(f"Moved {fname} to processed folder")
             except Exception as e:
@@ -152,14 +151,14 @@ def upload_interval_details(file_path):
 
         total_inserted += 1
 
-        # Products - skip summary rows but continue for page 2
+        # Products - skip blank/"0" and summary rows but continue for page 2
         product_batch = []
         for r in range(interval_row + 12, len(df)):
             product = clean_value(df.iloc[r, col])
             if not product:
                 break
             lower = product.lower()
-            if any(term in lower for term in ['product cost', 'mud volume', 'total cost', 'initial volume', 'end volume', 'mud treated', 'mud consumption']):
+            if lower in ['', '0'] or any(term in lower for term in ['product cost', 'mud volume', 'total cost', 'initial volume', 'end volume', 'mud treated', 'mud consumption']):
                 continue
 
             uom = clean_value(df.iloc[r, col - 1])
