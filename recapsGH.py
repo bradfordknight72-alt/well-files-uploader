@@ -21,11 +21,12 @@ console.setLevel(logging.WARNING)
 logger.addHandler(console)
 
 # ── Neon database connection details ─────────────────────────────────────
-NEON_HOST = "ep-blue-wind-anin6o30-pooler.c-6.us-east-1.aws.neon.tech"      # ← your Neon host
+# CHANGE THESE TO YOUR ACTUAL NEON VALUES (these should match your other scripts)
+NEON_HOST = "ep-your-project-name.us-east-2.aws.neon.tech"      # ← from Neon dashboard
 NEON_PORT = 5432
-NEON_DATABASE = "neondb"                                        # ← your database name
-NEON_USER = "neondb_owner"                                # ← your Neon user
-NEON_PASSWORD = "npg_uIt2cPJTE4aL"                  # ← your Neon password
+NEON_DATABASE = "neondb"                                        # ← usually neondb
+NEON_USER = "your_neon_username"                                # ← from Neon
+NEON_PASSWORD = "your_long_neon_password_here"                  # ← from Neon
 
 def get_neon_connection():
     return psycopg2.connect(
@@ -1286,7 +1287,6 @@ def upload_file(file_path):
         except Exception as e:
                 print(f"Failed to read or insert Mud Remarks: {e}")
 
-
     print(f"  → File processed")
     return True
 
@@ -1353,9 +1353,12 @@ Skipped (already in DB): {skipped}
 Failed: {failed}
 """
     print(summary)
-    
     logger.info(summary.strip())
 
-if __name__ == "__main__":
+def run_recaps_import():
     folder = os.path.join("uploads", "recaps")
     process_folder(folder)
+    return "Recaps import completed"
+
+if __name__ == "__main__":
+    run_recaps_import()
