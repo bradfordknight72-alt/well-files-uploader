@@ -1,4 +1,4 @@
-# interval_detailsGH.py - FINAL VERSION (skips summary rows but continues for page 2 products)
+# interval_detailsGH.py - FINAL VERSION with cleanup (old files moved to processed/)
 
 import pandas as pd
 import os
@@ -6,6 +6,7 @@ from tqdm import tqdm
 import logging
 import psycopg2
 from psycopg2.extras import execute_values
+from shutil import move
 
 logging.basicConfig(filename='drilling_intervals_import_log.txt', level=logging.INFO,
                     format='%(asctime)s | %(levelname)s | %(message)s')
@@ -51,20 +52,27 @@ def parse_date_range(s):
     return clean_value(parts[0].strip()), clean_value(parts[1].strip()) if len(parts)>1 else None
 
 def process_interval_folder(folder_path):
+    processed_dir = os.path.join(folder_path, "processed")
+    os.makedirs(processed_dir, exist_ok=True)
+
     logger.info(f"=== Starting interval import: {folder_path} ===")
     print(f"\n=== Importing Drilling Intervals: {folder_path} ===")
 
     files = [os.path.join(root, f) for root, dirs, fs in os.walk(folder_path)
-             for f in fs if f.lower().endswith('.xlsx')]
+             for f in fs if f.lower().endswith('.xlsx') and "processed" not in root]
 
     with tqdm(total=len(files), desc="Interval Details", unit="file") as pbar:
         for fpath in files:
+            fname = os.path.basename(fpath)
             try:
                 inserted = upload_interval_details(fpath)
-                logger.info(f"SUCCESS: {os.path.basename(fpath)} → {inserted} intervals")
+                logger.info(f"SUCCESS: {fname} → {inserted} intervals")
+                # Cleanup: move to processed folder
+                move(fpath, os.path.join(processed_dir, fname))
+                logger.info(f"Moved {fname} to processed folder")
             except Exception as e:
-                logger.error(f"FAILED {os.path.basename(fpath)}: {e}")
-                print(f"FAILED {os.path.basename(fpath)}: {e}")
+                logger.error(f"FAILED {fname}: {e}")
+                print(f"FAILED {fname}: {e}")
             pbar.update(1)
 
 def upload_interval_details(file_path):
@@ -108,7 +116,6 @@ def upload_interval_details(file_path):
         if not interval_name or len(str(interval_name)) < 3:
             continue
 
-        # Skip product parsing for Mobilization intervals
         if 'mobilization' in interval_name.lower():
             logger.info(f"Skipping products for Mobilization: {interval_name}")
             continue
@@ -131,21 +138,27 @@ def upload_interval_details(file_path):
                 well_id, interval_name, fluid_type, start_depth_ft, end_depth_ft,
                 length_ft, start_date, end_date, days, drilling_days
             ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (well_id, interval_name) DO NOTHING
             RETURNING id
         """, data)
-        interval_id = cur.fetchone()[0]
+        result = cur.fetchone()
         conn.commit()
+
+        if result:
+            interval_id = result[0]
+        else:
+            cur.execute('SELECT id FROM "DrillingIntervals" WHERE well_id = %s AND interval_name = %s', (well_id, interval_name))
+            interval_id = cur.fetchone()[0]
+
         total_inserted += 1
 
-        # ── Products (start at row 12, SKIP summary lines but CONTINUE) ─────
+        # Products - skip summary rows but continue for page 2
         product_batch = []
         for r in range(interval_row + 12, len(df)):
-            product_cell = clean_value(df.iloc[r, col])
-            if not product_cell:
+            product = clean_value(df.iloc[r, col])
+            if not product:
                 break
-
-            # Skip summary rows but keep looking for more products
-            lower = product_cell.lower()
+            lower = product.lower()
             if any(term in lower for term in ['product cost', 'mud volume', 'total cost', 'initial volume', 'end volume', 'mud treated', 'mud consumption']):
                 continue
 
@@ -155,7 +168,7 @@ def upload_interval_details(file_path):
 
             if qty is None and cost is None:
                 continue
-            product_batch.append((well_id, interval_id, interval_name, product_cell, uom, qty, cost))
+            product_batch.append((well_id, interval_id, interval_name, product, uom, qty, cost))
 
         if product_batch:
             try:
