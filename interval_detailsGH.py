@@ -1,4 +1,4 @@
-# interval_detailsGH.py - FINAL MASTER MERGE (summary rows fully skipped)
+# interval_detailsGH.py - FINAL MASTER MERGE (summary rows + header rows fully skipped)
 
 import pandas as pd
 import os
@@ -72,6 +72,7 @@ def process_interval_folder(folder_path):
             except Exception as e:
                 logger.error(f"FAILED {fname}: {e}")
                 print(f"FAILED {fname}: {e}")
+                move(fpath, os.path.join(processed_dir, fname))
             pbar.update(1)
 
 def upload_interval_details(file_path):
@@ -151,19 +152,24 @@ def upload_interval_details(file_path):
 
         total_inserted += 1
 
-        # Products - skip ALL summary rows but continue for page 2
+        # Products - Column A = product, B = uom, col = Used, col + 3 = Cost
         product_batch = []
         for r in range(interval_row + 12, len(df)):
+            if r >= len(df):
+                break
             product = clean_value(df.iloc[r, 0])
             if not product:
                 break
             lower = product.lower()
+
+            # AGGRESSIVE SKIP for ALL summary and header rows
             if lower in ['', '0'] or any(term in lower for term in [
                 'product cost', 'mud volume', 'total cost', 'initial volume', 
                 'from storage', 'other mud', 'base fluid', 'water', 'products',
                 'weight materials', 'formation', 'cuttings', 'others', 'mud losses',
                 'to storage', 'end volume', 'mud treated', 'mud consumption',
-                'cost ($/day)', 'cost ($/ft)', 'cost ($/bbl)']):
+                'cost ($/day)', 'cost ($/ft)', 'cost ($/bbl)',
+                'length (ft)', 'days', 'drilling days', 'interval', 'mud', 'depth (ft)']):
                 continue
 
             uom = clean_value(df.iloc[r, 1])
