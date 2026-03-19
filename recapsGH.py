@@ -21,7 +21,7 @@ console.setLevel(logging.WARNING)
 logger.addHandler(console)
 
 # ── Neon database connection details ─────────────────────────────────────
-# CHANGE THESE TO YOUR ACTUAL NEON VALUES (these should match your other scripts)
+# CHANGE THESE TO YOUR ACTUAL NEON VALUES
 NEON_HOST = "ep-your-project-name.us-east-2.aws.neon.tech"      # ← from Neon dashboard
 NEON_PORT = 5432
 NEON_DATABASE = "neondb"                                        # ← usually neondb
@@ -1290,75 +1290,11 @@ def upload_file(file_path):
     print(f"  → File processed")
     return True
 
-def process_folder(folder_path):
-    logger.info(f"=== Starting batch processing of folder: {folder_path} ===")
-    print(f"\n=== Batch Processing Folder: {folder_path} ===")
-    
-    excel_files = [os.path.join(root, f) for root, dirs, files in os.walk(folder_path)
-                   for f in files if f.lower().endswith('.xlsx')]
-    
-    total_files = len(excel_files)
-    logger.info(f"Found {total_files} .xlsx files")
-    print(f"Found {total_files} .xlsx files")
-    
-    if total_files == 0:
-        logger.info("No files found — exiting")
-        print("No files found.")
-        return
-    
-    processed = 0
-    skipped = 0
-    failed = 0
-    
-    with tqdm(total=total_files, desc="Importing recaps", unit="file", leave=True) as pbar:
-        for file_path in excel_files:
-            filename = os.path.basename(file_path).strip()
-            logger.info(f"Processing file: {filename}")
-            
-            # Duplicate check (using Neon)
-            try:
-                conn = get_neon_connection()
-                cur = conn.cursor()
-                cur.execute('SELECT id FROM "Wells" WHERE filename = %s LIMIT 1', (filename,))
-                if cur.fetchone():
-                    logger.info(f"Already exists — skipping {filename}")
-                    skipped += 1
-                    pbar.update(1)
-                    cur.close()
-                    conn.close()
-                    continue
-                cur.close()
-                conn.close()
-            except Exception as e:
-                logger.error(f"Duplicate check failed for {filename}: {str(e)}")
-                print(f"Duplicate check error: {e}")
-            
-            # Upload
-            try:
-                upload_file(file_path)
-                processed += 1
-                logger.info(f"Success: {filename}")
-            except Exception as e:
-                logger.error(f"FAILED {filename}: {str(e)}")
-                print(f"FAILED {filename}: {e}")
-                failed += 1
-            
-            pbar.update(1)
-    
-    # Final summary
-    summary = f"""
-=== Batch Complete ===
-Processed successfully: {processed}
-Skipped (already in DB): {skipped}
-Failed: {failed}
-"""
-    print(summary)
-    logger.info(summary.strip())
-
 def run_recaps_import():
+    # This is the function app.py will call
     folder = os.path.join("uploads", "recaps")
     process_folder(folder)
-    return "Recaps import completed"
+    return "Recaps import completed successfully"
 
 if __name__ == "__main__":
     run_recaps_import()
