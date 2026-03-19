@@ -1,4 +1,4 @@
-# interval_detailsGH.py - COMPLETE FINAL MERGE SCRIPT (all issues fixed)
+# interval_detailsGH.py - MASTER MERGE SCRIPT (final version)
 
 import pandas as pd
 import os
@@ -151,19 +151,19 @@ def upload_interval_details(file_path):
 
         total_inserted += 1
 
-        # Products - skip blank/"0" and summary rows but continue for page 2
+        # Products - fixed column mapping (A = product, B = uom, interval columns for qty/cost)
         product_batch = []
         for r in range(interval_row + 12, len(df)):
-            product = clean_value(df.iloc[r, col])
+            product = clean_value(df.iloc[r, 0])  # Column A = product name
             if not product:
                 break
             lower = product.lower()
             if lower in ['', '0'] or any(term in lower for term in ['product cost', 'mud volume', 'total cost', 'initial volume', 'end volume', 'mud treated', 'mud consumption']):
                 continue
 
-            uom = clean_value(df.iloc[r, col - 1])
-            qty = safe_float(df.iloc[r, col + 3])
-            cost = safe_float(df.iloc[r, col + 6])
+            uom = clean_value(df.iloc[r, 1])  # Column B = unit
+            qty = safe_float(df.iloc[r, col + 3])   # Used column under this interval
+            cost = safe_float(df.iloc[r, col + 6])   # Cost column under this interval
 
             if qty is None and cost is None:
                 continue
