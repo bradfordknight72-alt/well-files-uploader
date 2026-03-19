@@ -1,4 +1,4 @@
-# interval_detailsGH.py - FINAL FIXED VERSION (matches your Trinity file exactly)
+# interval_detailsGH.py - FINAL VERSION (skips summary rows but continues for page 2 products)
 
 import pandas as pd
 import os
@@ -71,10 +71,10 @@ def upload_interval_details(file_path):
     df = pd.read_excel(file_path, sheet_name='Sheet1', header=None)
     logger.info(f"Loaded {len(df)} rows from Sheet1")
 
-    # Extract well_id from row 2, column H (index 1,7)
+    # Extract well_id from row 2, column H
     well_name_raw = clean_value(df.iloc[1, 7])
     if not well_name_raw:
-        logger.warning("No well name found in Sheet1 row 2 column H")
+        logger.warning("No well name found")
         return 0
 
     conn = get_neon_connection()
@@ -93,11 +93,11 @@ def upload_interval_details(file_path):
     cur.close()
     conn.close()
 
-    # Interval names on row 5 (index 4), starting column D (index 3), every 4 columns
+    # Interval names on row 5, starting column D, every 4 columns
     interval_row = 4
     interval_cols = [c for c in range(3, df.shape[1], 4) if clean_value(df.iloc[interval_row, c])]
 
-    logger.info(f"Detected intervals at columns: {interval_cols}")
+    logger.info(f"Detected {len(interval_cols)} intervals")
 
     conn = get_neon_connection()
     cur = conn.cursor()
@@ -106,6 +106,11 @@ def upload_interval_details(file_path):
     for col in interval_cols:
         interval_name = clean_value(df.iloc[interval_row, col])
         if not interval_name or len(str(interval_name)) < 3:
+            continue
+
+        # Skip product parsing for Mobilization intervals
+        if 'mobilization' in interval_name.lower():
+            logger.info(f"Skipping products for Mobilization: {interval_name}")
             continue
 
         fluid_type = clean_value(df.iloc[interval_row + 1, col])
@@ -118,7 +123,6 @@ def upload_interval_details(file_path):
         start_depth, end_depth = parse_depth_range(depth_range)
         start_date, end_date = parse_date_range(date_range)
 
-        # Insert interval and get real interval_id
         data = (well_id, interval_name, fluid_type, start_depth, end_depth,
                 length_ft, start_date, end_date, days, drilling_days)
 
@@ -133,19 +137,25 @@ def upload_interval_details(file_path):
         conn.commit()
         total_inserted += 1
 
-        # ── Products (row 12 onward) ─────────────────────────────────────
+        # ── Products (start at row 12, SKIP summary lines but CONTINUE) ─────
         product_batch = []
         for r in range(interval_row + 12, len(df)):
-            product = clean_value(df.iloc[r, col])
-            if not product or product.lower() in ['total', 'summary', 'cost']:
+            product_cell = clean_value(df.iloc[r, col])
+            if not product_cell:
                 break
-            uom = clean_value(df.iloc[r, col - 1])          # Unit column left of product
-            qty = safe_float(df.iloc[r, col + 3])           # Used column
-            cost = safe_float(df.iloc[r, col + 6])          # Cost column
+
+            # Skip summary rows but keep looking for more products
+            lower = product_cell.lower()
+            if any(term in lower for term in ['product cost', 'mud volume', 'total cost', 'initial volume', 'end volume', 'mud treated', 'mud consumption']):
+                continue
+
+            uom = clean_value(df.iloc[r, col - 1])
+            qty = safe_float(df.iloc[r, col + 3])
+            cost = safe_float(df.iloc[r, col + 6])
 
             if qty is None and cost is None:
                 continue
-            product_batch.append((well_id, interval_id, interval_name, product, uom, qty, cost))
+            product_batch.append((well_id, interval_id, interval_name, product_cell, uom, qty, cost))
 
         if product_batch:
             try:
