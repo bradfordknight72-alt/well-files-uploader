@@ -162,8 +162,8 @@ def upload_interval_details(file_path):
                 continue
 
             uom = clean_value(df.iloc[r, 1])  # Column B
-            qty = safe_float(df.iloc[r, col + 3])  # Used column for this interval
-            cost = safe_float(df.iloc[r, col + 6])  # Cost column for this interval
+            qty = safe_float(df.iloc[r, col])  # Used column for this interval
+            cost = safe_float(df.iloc[r, col + 3])  # Cost column for this interval
 
             if qty is None and cost is None:
                 continue
