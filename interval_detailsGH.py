@@ -1,4 +1,4 @@
-# interval_detailsGH.py - FINAL MASTER MERGE SCRIPT
+# interval_detailsGH.py - FINAL MASTER MERGE (summary rows fully skipped)
 
 import pandas as pd
 import os
@@ -151,19 +151,24 @@ def upload_interval_details(file_path):
 
         total_inserted += 1
 
-        # Products - Column A = product name, B = uom, col+3 = Used, col+6 = Cost
+        # Products - skip ALL summary rows but continue for page 2
         product_batch = []
         for r in range(interval_row + 12, len(df)):
-            product = clean_value(df.iloc[r, 0])  # Column A
+            product = clean_value(df.iloc[r, 0])
             if not product:
                 break
             lower = product.lower()
-            if lower in ['', '0'] or any(term in lower for term in ['product cost', 'mud volume', 'total cost', 'initial volume', 'end volume', 'mud treated', 'mud consumption']):
+            if lower in ['', '0'] or any(term in lower for term in [
+                'product cost', 'mud volume', 'total cost', 'initial volume', 
+                'from storage', 'other mud', 'base fluid', 'water', 'products',
+                'weight materials', 'formation', 'cuttings', 'others', 'mud losses',
+                'to storage', 'end volume', 'mud treated', 'mud consumption',
+                'cost ($/day)', 'cost ($/ft)', 'cost ($/bbl)']):
                 continue
 
-            uom = clean_value(df.iloc[r, 1])  # Column B
-            qty = safe_float(df.iloc[r, col])  # Used column for this interval
-            cost = safe_float(df.iloc[r, col + 3])  # Cost column for this interval
+            uom = clean_value(df.iloc[r, 1])
+            qty = safe_float(df.iloc[r, col])
+            cost = safe_float(df.iloc[r, col + 3])
 
             if qty is None and cost is None:
                 continue
