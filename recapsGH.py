@@ -21,12 +21,11 @@ console.setLevel(logging.WARNING)
 logger.addHandler(console)
 
 # ── Neon database connection details ─────────────────────────────────────
-# CHANGE THESE TO YOUR ACTUAL NEON VALUES
-NEON_HOST = "ep-your-project-name.us-east-2.aws.neon.tech"      # ← from Neon dashboard
+NEON_HOST = "ep-blue-wind-anin6o30-pooler.c-6.us-east-1.aws.neon.tech"      # ← your Neon host
 NEON_PORT = 5432
-NEON_DATABASE = "neondb"                                        # ← usually neondb
-NEON_USER = "your_neon_username"                                # ← from Neon
-NEON_PASSWORD = "your_long_neon_password_here"                  # ← from Neon
+NEON_DATABASE = "neondb"                                        # ← your database name
+NEON_USER = "neondb_owner"                                # ← your Neon user
+NEON_PASSWORD = "npg_uIt2cPJTE4aL"                  # ← your Neon password
 
 def get_neon_connection():
     return psycopg2.connect(
