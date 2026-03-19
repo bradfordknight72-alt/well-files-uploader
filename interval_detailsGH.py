@@ -1,4 +1,4 @@
-# interval_detailsGH.py - COMPLETE FIXED VERSION
+# interval_detailsGH.py - FINAL FIXED VERSION (matches your Trinity file)
 
 import pandas as pd
 import os
@@ -71,13 +71,12 @@ def upload_interval_details(file_path):
     df = pd.read_excel(file_path, sheet_name='Sheet1', header=None)
     logger.info(f"Loaded {len(df)} rows from Sheet1")
 
-    # Extract well name from Sheet1, column H (index 7), row 2 (0-based index 1)
+    # Extract well_id from row 2, column H (index 1,7)
     well_name_raw = clean_value(df.iloc[1, 7])
     if not well_name_raw:
-        logger.warning("No well name found in Sheet1 column H row 2")
+        logger.warning("No well name found in Sheet1 row 2 column H")
         return 0
 
-    # Find well_id
     conn = get_neon_connection()
     cur = conn.cursor()
     cur.execute('SELECT id FROM "Wells" WHERE lower(well_name) = lower(%s)', (well_name_raw.strip(),))
@@ -98,7 +97,7 @@ def upload_interval_details(file_path):
     interval_row = 4
     interval_cols = [c for c in range(3, df.shape[1], 4) if clean_value(df.iloc[interval_row, c])]
 
-    logger.info(f"Detected {len(interval_cols)} intervals")
+    logger.info(f"Detected intervals at columns: {interval_cols}")
 
     conn = get_neon_connection()
     cur = conn.cursor()
@@ -132,7 +131,7 @@ def upload_interval_details(file_path):
         conn.commit()
         inserted += 1
 
-        # Products
+        # ── Product Usage ─────────────────────────────────────────────────
         product_batch = []
         for r in range(interval_row + 12, len(df)):
             product = clean_value(df.iloc[r, col])
@@ -148,7 +147,7 @@ def upload_interval_details(file_path):
             try:
                 execute_values(cur, """
                     INSERT INTO "IntervalProducts" (well_id, interval_name, product, quantity, cost)
-                    VALUES %s ON CONFLICT (well_id, interval_name, product) DO NOTHING
+                    VALUES %s
                 """, product_batch)
                 conn.commit()
                 logger.info(f"Inserted {len(product_batch)} products for {interval_name}")
