@@ -4,14 +4,20 @@ import uvicorn
 import shutil
 import os
 from pathlib import Path
-import subprocess
 from typing import List
 import logging
 
-# DEPLOY FORCE v3 - 2026-03-18
-# Logging setup (this must come early)
+# Import your scripts' main functions (after refactoring them)
+from recapsGH import run_recaps_import
+from interval_detailsGH import run_interval_import
+from import_timeGH import run_time_import
+from import_pason_codesGH import run_pason_import
+
+app = FastAPI()
+
+# Logging setup
 logging.basicConfig(
-    filename='app.log',  # optional - logs to file on Render
+    filename='app.log',
     level=logging.INFO,
     format='%(asctime)s | %(levelname)s | %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
@@ -21,21 +27,19 @@ console = logging.StreamHandler()
 console.setLevel(logging.INFO)
 logger.addHandler(console)
 
-app = FastAPI()
-
-# Folders where uploaded files will be moved before running the import
+# Upload directory
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# Map keyword → script filename (using absolute paths for Render reliability)
-IMPORT_SCRIPTS = {
-    "recaps": os.path.abspath("recapsGH.py"),
-    "interval_details": os.path.abspath("interval_detailsGH.py"),
-    "time": os.path.abspath("import_timeGH.py"),
-    "pason": os.path.abspath("import_pason_codesGH.py"),
+# Keyword → import function mapping
+IMPORT_FUNCTIONS = {
+    "recaps": run_recaps_import,
+    "interval_details": run_interval_import,
+    "time": run_time_import,
+    "pason": run_pason_import,
 }
 
-# Simple API key protection
+# API key protection
 API_KEY = "Momentum2012"
 
 def verify_api_key(x_api_key: str = Header(None)):
@@ -43,7 +47,6 @@ def verify_api_key(x_api_key: str = Header(None)):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
     return x_api_key
 
-# Root page - simple drag-drop UI
 @app.get("/", response_class=HTMLResponse)
 async def root():
     return """
@@ -119,7 +122,7 @@ async def root():
                         method: 'POST',
                         body: formData,
                         headers: {
-                            'x-api-key': 'Momentum2012'  // Your key
+                            'x-api-key': 'Momentum2012'
                         }
                     });
 
@@ -139,7 +142,6 @@ async def root():
                 }
             });
 
-            // Click to select files (optional)
             dropZone.addEventListener('click', () => {
                 const input = document.createElement('input');
                 input.type = 'file';
@@ -176,20 +178,20 @@ async def upload_files(files: List[UploadFile] = File(...), x_api_key: str = Hea
                 shutil.copyfileobj(file.file, f)
 
             lower_name = file.filename.lower()
-            script = None
+            script_key = None
             target_folder = None
 
             if 'recap' in lower_name:
-                script = "recapsGH.py"
+                script_key = "recaps"
                 target_folder = UPLOAD_DIR / "recaps"
             elif 'interval' in lower_name or 'detail' in lower_name:
-                script = "interval_detailsGH.py"
+                script_key = "interval_details"
                 target_folder = UPLOAD_DIR / "interval_details"
             elif 'time' in lower_name:
-                script = "import_timeGH.py"
+                script_key = "time"
                 target_folder = UPLOAD_DIR / "time"
             elif 'pason' in lower_name or 'code' in lower_name:
-                script = "import_pason_codesGH.py"
+                script_key = "pason"
                 target_folder = UPLOAD_DIR / "pason"
             else:
                 results.append(f"{file.filename}: no matching folder/script")
@@ -199,35 +201,19 @@ async def upload_files(files: List[UploadFile] = File(...), x_api_key: str = Hea
             target_path = target_folder / file.filename
             shutil.move(file_path, target_path)
 
-            script_path = IMPORT_SCRIPTS.get(script)
-            if not script_path or not os.path.exists(script_path):
-                results.append(f"{file.filename}: script not found for {script}")
+            import_func = IMPORT_FUNCTIONS.get(script_key)
+            if not import_func:
+                results.append(f"{file.filename}: no matching function for {script_key}")
                 continue
 
-            # Use absolute path to fix Render path resolution issues
-            # Use absolute path + explicit cwd to force Render to find and run the script
-            script_abs_path = os.path.abspath(script_path)
-            logger.info(f"Attempting to run script at absolute path: {script_abs_path}")
+            logger.info(f"Running import function for {script_key}")
 
             try:
-                result = subprocess.run(
-                    ["python", script_abs_path],
-                    capture_output=True,
-                    text=True,
-                    timeout=600,
-                    cwd=str(UPLOAD_DIR / target_folder.name)  # Run script from inside the target folder
-                )
-                if result.returncode == 0:
-                    results.append(f"{file.filename}: imported successfully ({script})")
-                    results.append(result.stdout)
-                else:
-                    results.append(f"{file.filename}: import failed (return code {result.returncode})\n{result.stderr}")
-            except subprocess.TimeoutExpired:
-                results.append(f"{file.filename}: import timed out")
-            except FileNotFoundError as e:
-                results.append(f"{file.filename}: script file not found at {script_abs_path} - {str(e)}")
+                result = import_func()  # Call the function directly
+                results.append(f"{file.filename}: imported successfully ({script_key})")
+                results.append(str(result) if result else "Done")
             except Exception as e:
-                results.append(f"{file.filename}: error running {script} - {str(e)}")
+                results.append(f"{file.filename}: import failed - {str(e)}")
 
         except Exception as e:
             results.append(f"{file.filename}: upload error - {str(e)}")
