@@ -1,4 +1,4 @@
-# interval_detailsGH.py - FINAL VERSION (matches your Trinity file exactly)
+# interval_detailsGH.py - COMPLETE FIXED VERSION
 
 import pandas as pd
 import os
@@ -71,15 +71,34 @@ def upload_interval_details(file_path):
     df = pd.read_excel(file_path, sheet_name='Sheet1', header=None)
     logger.info(f"Loaded {len(df)} rows from Sheet1")
 
-    # INTERVAL NAMES START ON ROW 5 (index 4), COLUMN D (index 3), every 4 columns
-    interval_row = 4
-    interval_cols = []
-    for c in range(3, df.shape[1], 4):   # columns D=3, H=7, L=11, P=15...
-        name = clean_value(df.iloc[interval_row, c])
-        if name and len(str(name)) > 2:
-            interval_cols.append(c)
+    # Extract well name from Sheet1, column H (index 7), row 2 (0-based index 1)
+    well_name_raw = clean_value(df.iloc[1, 7])
+    if not well_name_raw:
+        logger.warning("No well name found in Sheet1 column H row 2")
+        return 0
 
-    logger.info(f"Detected interval columns: {interval_cols}")
+    # Find well_id
+    conn = get_neon_connection()
+    cur = conn.cursor()
+    cur.execute('SELECT id FROM "Wells" WHERE lower(well_name) = lower(%s)', (well_name_raw.strip(),))
+    row = cur.fetchone()
+    if not row:
+        cur.execute('SELECT id FROM "Wells" WHERE well_name ILIKE %s LIMIT 1', (f"%{well_name_raw}%",))
+        row = cur.fetchone()
+    if not row:
+        logger.warning(f"No well match for '{well_name_raw}'")
+        cur.close()
+        conn.close()
+        return 0
+    well_id = row[0]
+    cur.close()
+    conn.close()
+
+    # Interval names on row 5 (index 4), starting column D (index 3), every 4 columns
+    interval_row = 4
+    interval_cols = [c for c in range(3, df.shape[1], 4) if clean_value(df.iloc[interval_row, c])]
+
+    logger.info(f"Detected {len(interval_cols)} intervals")
 
     conn = get_neon_connection()
     cur = conn.cursor()
@@ -113,7 +132,7 @@ def upload_interval_details(file_path):
         conn.commit()
         inserted += 1
 
-        # ── Products ─────────────────────────────────────────────────────
+        # Products
         product_batch = []
         for r in range(interval_row + 12, len(df)):
             product = clean_value(df.iloc[r, col])
