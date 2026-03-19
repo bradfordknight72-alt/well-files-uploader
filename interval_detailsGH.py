@@ -400,6 +400,11 @@ def upload_interval_details(file_path, well_id):
         print(f"Interval import failed for {filename}: {e}")
         return 0
 
-if __name__ == "__main__":
-    folder = os.path.join("uploads", "interval_detail")
+def run_interval_import():
+    # This is the function app.py will call
+    folder = os.path.join("uploads", "interval_details")
     process_interval_folder(folder)
+    return "Interval details import completed successfully"
+
+if __name__ == "__main__":
+    run_interval_import()
