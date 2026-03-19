@@ -1,4 +1,4 @@
-# interval_detailsGH.py - FINAL FIXED VERSION (matches your Trinity file)
+# interval_detailsGH.py - FINAL FIXED VERSION (matches your Trinity file exactly)
 
 import pandas as pd
 import os
@@ -101,7 +101,7 @@ def upload_interval_details(file_path):
 
     conn = get_neon_connection()
     cur = conn.cursor()
-    inserted = 0
+    total_inserted = 0
 
     for col in interval_cols:
         interval_name = clean_value(df.iloc[interval_row, col])
@@ -118,6 +118,7 @@ def upload_interval_details(file_path):
         start_depth, end_depth = parse_depth_range(depth_range)
         start_date, end_date = parse_date_range(date_range)
 
+        # Insert interval and get real interval_id
         data = (well_id, interval_name, fluid_type, start_depth, end_depth,
                 length_ft, start_date, end_date, days, drilling_days)
 
@@ -126,27 +127,31 @@ def upload_interval_details(file_path):
                 well_id, interval_name, fluid_type, start_depth_ft, end_depth_ft,
                 length_ft, start_date, end_date, days, drilling_days
             ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            ON CONFLICT (well_id, interval_name) DO NOTHING
+            RETURNING id
         """, data)
+        interval_id = cur.fetchone()[0]
         conn.commit()
-        inserted += 1
+        total_inserted += 1
 
-        # ── Product Usage ─────────────────────────────────────────────────
+        # ── Products (row 12 onward) ─────────────────────────────────────
         product_batch = []
         for r in range(interval_row + 12, len(df)):
             product = clean_value(df.iloc[r, col])
             if not product or product.lower() in ['total', 'summary', 'cost']:
                 break
-            qty = safe_float(df.iloc[r, col + 1])
-            cost = safe_float(df.iloc[r, col + 4])
+            uom = clean_value(df.iloc[r, col - 1])          # Unit column left of product
+            qty = safe_float(df.iloc[r, col + 3])           # Used column
+            cost = safe_float(df.iloc[r, col + 6])          # Cost column
+
             if qty is None and cost is None:
                 continue
-            product_batch.append((well_id, interval_name, product, qty, cost))
+            product_batch.append((well_id, interval_id, interval_name, product, uom, qty, cost))
 
         if product_batch:
             try:
                 execute_values(cur, """
-                    INSERT INTO "IntervalProducts" (well_id, interval_name, product, quantity, cost)
+                    INSERT INTO "IntervalProducts" 
+                    (well_id, interval_id, interval_name, product, uom, quantity, cost)
                     VALUES %s
                 """, product_batch)
                 conn.commit()
@@ -156,7 +161,7 @@ def upload_interval_details(file_path):
 
     cur.close()
     conn.close()
-    return inserted
+    return total_inserted
 
 def run_interval_import():
     folder = os.path.join("uploads", "interval_details")
