@@ -8,7 +8,7 @@ import subprocess
 from typing import List
 import logging
 
-# Debug 2026-03-18 v2
+# DEPLOY FORCE v3 - 2026-03-18
 # Logging setup (this must come early)
 logging.basicConfig(
     filename='app.log',  # optional - logs to file on Render
