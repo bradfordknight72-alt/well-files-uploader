@@ -203,6 +203,21 @@ def upload_pason_codes(file_path):
         if rig_name:
             well_name_from_file = f"{rig_name} {well_name_from_file}".strip()
 
+        # Skip if duplicate (well_id + date + from_time)
+        conn = get_neon_connection()
+        cur = conn.cursor()
+        cur.execute(
+            'SELECT id FROM "PasonCodes" WHERE well_id = %s AND date = %s AND from_time = %s LIMIT 1',
+            (well_id, pason_date, from_time)
+        )
+        if cur.fetchone():
+            skipped += 1
+            cur.close()
+            conn.close()
+            continue
+        cur.close()
+        conn.close()
+
         pason_data = (
             well_id,
             rig_name,
@@ -234,7 +249,7 @@ def upload_pason_codes(file_path):
                         from_time, to_time, hours, time_code, time_code_desc,
                         sub_code, sub_code_desc, details
                     ) VALUES %s
-                    ON CONFLICT (well_id, date, shift, sequence, from_time, to_time) DO NOTHING
+                    ON CONFLICT (well_id, date, from_time) DO NOTHING
                     """,
                     batch
                 )
@@ -260,7 +275,7 @@ def upload_pason_codes(file_path):
                     from_time, to_time, hours, time_code, time_code_desc,
                     sub_code, sub_code_desc, details
                 ) VALUES %s
-                ON CONFLICT (well_id, date, shift, sequence, from_time, to_time) DO NOTHING
+                ON CONFLICT (well_id, date, from_time) DO NOTHING
                 """,
                 batch
             )
@@ -303,6 +318,11 @@ def process_folder(folder_path):
     print(f"Total Pason rows inserted: {total_inserted}")
     logger.info(f"Batch complete. Total inserted: {total_inserted}")
 
-if __name__ == "__main__":
+def run_pason_import():
+    # This is the function app.py will call
     folder = os.path.join("uploads", "pason")
     process_folder(folder)
+    return "Pason codes import completed successfully"
+
+if __name__ == "__main__":
+    run_pason_import()
