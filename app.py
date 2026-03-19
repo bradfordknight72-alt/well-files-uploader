@@ -205,6 +205,7 @@ async def upload_files(files: List[UploadFile] = File(...), x_api_key: str = Hea
                 continue
 
             # Use absolute path to fix Render path resolution issues
+            # Use absolute path + explicit cwd to force Render to find and run the script
             script_abs_path = os.path.abspath(script_path)
             logger.info(f"Attempting to run script at absolute path: {script_abs_path}")
 
@@ -213,15 +214,18 @@ async def upload_files(files: List[UploadFile] = File(...), x_api_key: str = Hea
                     ["python", script_abs_path],
                     capture_output=True,
                     text=True,
-                    timeout=600
+                    timeout=600,
+                    cwd=str(UPLOAD_DIR / target_folder.name)  # Run script from inside the target folder
                 )
                 if result.returncode == 0:
                     results.append(f"{file.filename}: imported successfully ({script})")
                     results.append(result.stdout)
                 else:
-                    results.append(f"{file.filename}: import failed\n{result.stderr}")
+                    results.append(f"{file.filename}: import failed (return code {result.returncode})\n{result.stderr}")
             except subprocess.TimeoutExpired:
                 results.append(f"{file.filename}: import timed out")
+            except FileNotFoundError as e:
+                results.append(f"{file.filename}: script file not found at {script_abs_path} - {str(e)}")
             except Exception as e:
                 results.append(f"{file.filename}: error running {script} - {str(e)}")
 
