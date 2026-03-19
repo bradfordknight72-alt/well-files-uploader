@@ -310,6 +310,11 @@ def process_folder(folder_path):
     print(f"Total time records inserted: {total_inserted}")
     logger.info(f"Batch complete. Total inserted: {total_inserted}")
 
-if __name__ == "__main__":
+def run_time_import():
+    # This is the function app.py will call
     folder = os.path.join("uploads", "time")
     process_folder(folder)
+    return "Time import completed successfully"
+
+if __name__ == "__main__":
+    run_time_import()
