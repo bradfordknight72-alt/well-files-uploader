@@ -7,11 +7,19 @@ from pathlib import Path
 from typing import List
 import logging
 
-# Import your scripts' main functions (after refactoring them)
+# Import your scripts' main functions
 from recapsGH import run_recaps_import
 from interval_detailsGH import run_interval_import
 from import_timeGH import run_time_import
 from import_pason_codesGH import run_pason_import
+
+# Map keyword → import function
+IMPORT_FUNCTIONS = {
+    "recaps": run_recaps_import,
+    "interval_details": run_interval_import,
+    "time": run_time_import,
+    "pason": run_pason_import,
+}
 
 app = FastAPI()
 
@@ -205,9 +213,9 @@ async def upload_files(files: List[UploadFile] = File(...), x_api_key: str = Hea
             if not import_func:
                 results.append(f"{file.filename}: no matching function for {script_key}")
                 continue
-
+            
             logger.info(f"Running import function for {script_key}")
-
+            
             try:
                 result = import_func()  # Call the function directly
                 results.append(f"{file.filename}: imported successfully ({script_key})")
