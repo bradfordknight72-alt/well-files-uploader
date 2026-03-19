@@ -1,4 +1,4 @@
-# interval_detailsGH.py - FINAL MASTER MERGE (summary rows + header rows fully skipped)
+# interval_detailsGH.py - FINAL MASTER MERGE (MasterProducts lookup + full summary skip)
 
 import pandas as pd
 import os
@@ -50,6 +50,20 @@ def parse_date_range(s):
     if not s or '-' not in str(s): return None, None
     parts = str(s).split('-')
     return clean_value(parts[0].strip()), clean_value(parts[1].strip()) if len(parts)>1 else None
+
+def get_master_product(cur, product_name):
+    """Lookup in MasterProducts for standardized name and category"""
+    cur.execute("""
+        SELECT product_name, category 
+        FROM "MasterProducts" 
+        WHERE product_name ILIKE %s 
+           OR %s = ANY(variations)
+        LIMIT 1
+    """, (product_name, product_name))
+    row = cur.fetchone()
+    if row:
+        return row[0], row[1]
+    return product_name, None  # fallback
 
 def process_interval_folder(folder_path):
     processed_dir = os.path.join(folder_path, "processed")
@@ -161,8 +175,6 @@ def upload_interval_details(file_path):
             if not product:
                 break
             lower = product.lower()
-
-            # AGGRESSIVE SKIP for ALL summary and header rows
             if lower in ['', '0'] or any(term in lower for term in [
                 'product cost', 'mud volume', 'total cost', 'initial volume', 
                 'from storage', 'other mud', 'base fluid', 'water', 'products',
@@ -178,13 +190,16 @@ def upload_interval_details(file_path):
 
             if qty is None and cost is None:
                 continue
-            product_batch.append((well_id, interval_id, interval_name, product, uom, qty, cost))
+
+            # MasterProducts lookup for standardized name and category
+            master_name, category = get_master_product(cur, product)
+            product_batch.append((well_id, interval_id, interval_name, master_name, uom, qty, cost, category))
 
         if product_batch:
             try:
                 execute_values(cur, """
                     INSERT INTO "IntervalProducts" 
-                    (well_id, interval_id, interval_name, product, uom, quantity, cost)
+                    (well_id, interval_id, interval_name, product, uom, quantity, cost, category)
                     VALUES %s
                 """, product_batch)
                 conn.commit()
