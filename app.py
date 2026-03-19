@@ -124,7 +124,7 @@ async def root():
                 log.scrollTop = log.scrollHeight;
             }
 
-            // Drag & Drop logic (unchanged)
+            // Drag & Drop logic
             dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
             dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
             dropZone.addEventListener('drop', async e => {
@@ -147,7 +147,7 @@ async def root():
                         status.textContent = "Import complete!";
                         logMessage(`Success: ${result.message}`, 'success');
                         result.details.forEach(d => logMessage(d));
-                        viewLastImport('interval_details'); // Auto-show verification
+                        viewLastImport('interval_details');
                     } else {
                         status.textContent = "Import failed";
                         logMessage(`Error: ${result.detail}`, 'error');
@@ -173,21 +173,19 @@ async def root():
                 input.click();
             });
 
-            // Verification functions (unchanged from previous version)
             async function viewLastImport(type) {
                 verificationResult.innerHTML = `Loading last ${type} import...`;
                 try {
                     const res = await fetch(`/verify_last_${type}`);
                     const data = await res.json();
                     let html = `<h3>Last ${type} Import</h3>`;
-                    if (data.rows && data.rows.length) {
-                        html += '<table border="1" style="border-collapse:collapse;width:100%;"><tr><th>Key Fields</th></tr>';
-                        data.rows.forEach(row => {
-                            html += `<tr><td>${JSON.stringify(row)}</td></tr>`;
+                    if (data.summary) html += `<p><strong>${data.summary}</strong></p>`;
+                    if (data.lines && data.lines.length) {
+                        html += '<ul>';
+                        data.lines.forEach(line => {
+                            html += `<li>${line}</li>`;
                         });
-                        html += '</table>';
-                    } else {
-                        html += '<p>No recent records found.</p>';
+                        html += '</ul>';
                     }
                     verificationResult.innerHTML = html;
                 } catch (err) {
@@ -199,11 +197,8 @@ async def root():
                 window.location.href = `/export_${type}`;
             }
 
-            // NEW: Clear Last Import button
             async function clearLastImport() {
-                if (!confirm('This will DELETE the most recent import records from Neon (DrillingIntervals and IntervalProducts). Continue?')) {
-                    return;
-                }
+                if (!confirm('This will DELETE the most recent import records from Neon. Continue?')) return;
                 verificationResult.innerHTML = 'Clearing last import...';
                 try {
                     const res = await fetch('/clear_last_import', { method: 'POST' });
@@ -212,7 +207,6 @@ async def root():
                     logMessage('Last import cleared from Neon', 'success');
                 } catch (err) {
                     verificationResult.innerHTML = 'Error clearing: ' + err.message;
-                    logMessage('Clear failed', 'error');
                 }
             }
         </script>
@@ -267,7 +261,7 @@ async def upload_files(files: List[UploadFile] = File(...), x_api_key: str = Hea
             results.append(f"{file.filename}: upload error - {str(e)}")
     return {"message": f"Processed {len(files)} file(s)", "details": results}
 
-# NEW: Clear Last Import endpoint (deletes most recent records from DrillingIntervals and IntervalProducts)
+# NEW: Clear Last Import
 @app.post("/clear_last_import")
 async def clear_last_import():
     conn = get_neon_connection()
@@ -281,22 +275,38 @@ async def clear_last_import():
     conn.close()
     return {"message": f"Cleared {deleted_intervals} intervals and {deleted_products} products from the last import."}
 
-# Verification endpoints (for all types - unchanged from previous)
+# Verification for Interval Details (human-friendly)
+@app.get("/verify_last_interval_details")
+async def verify_last_interval_details():
+    conn = get_neon_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT w.well_name, i.interval_name, ip.product, ip.uom, ip.quantity, ip.cost, ip.category
+        FROM "IntervalProducts" ip
+        JOIN "DrillingIntervals" i ON ip.interval_id = i.id
+        JOIN "Wells" w ON ip.well_id = w.id
+        ORDER BY ip.created_at DESC LIMIT 50
+    """)
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    summary = f"{len(set(r['interval_name'] for r in rows))} intervals imported – " + ", ".join(set(r['interval_name'] for r in rows))
+    lines = []
+    for r in rows:
+        line = f"{r['well_name']}: {r['interval_name']} – {r['product']} {r['uom'] or ''}, {r['quantity'] or 0} used, {r['cost'] or 0} cost"
+        if r['category']:
+            line += f" ({r['category']})"
+        lines.append(line)
+
+    return {"summary": summary, "lines": lines}
+
+# Other verification endpoints (simplified for brevity)
 @app.get("/verify_last_recaps")
 async def verify_last_recaps():
     conn = get_neon_connection()
     cur = conn.cursor()
     cur.execute('SELECT * FROM "Recaps" ORDER BY created_at DESC LIMIT 10')
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
-    return {"rows": rows}
-
-@app.get("/verify_last_interval_details")
-async def verify_last_interval_details():
-    conn = get_neon_connection()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM "IntervalProducts" ORDER BY created_at DESC LIMIT 20')
     rows = cur.fetchall()
     cur.close()
     conn.close()
@@ -322,6 +332,7 @@ async def verify_last_pason():
     conn.close()
     return {"rows": rows}
 
+# Export endpoints (unchanged)
 @app.get("/export_recaps")
 async def export_recaps():
     conn = get_neon_connection()
