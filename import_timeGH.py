@@ -1,12 +1,12 @@
-# import_time.py
+# import_timeGH.py
 # Standalone: import 10-second drilling time records from CSV/Excel into 'Time' table
-# Now using psycopg2 + Neon database connection
+# Now using separate date + time columns (exactly matching your Neon table)
 
 import pandas as pd
 import os
 from tqdm import tqdm
 import logging
-from Levenshtein import distance as lev_distance  # pip install python-Levenshtein
+from Levenshtein import distance as lev_distance
 import psycopg2
 from psycopg2.extras import execute_values
 
@@ -24,11 +24,11 @@ console.setLevel(logging.WARNING)
 logger.addHandler(console)
 
 # ── Neon database connection details ─────────────────────────────────────
-NEON_HOST = "ep-blue-wind-anin6o30-pooler.c-6.us-east-1.aws.neon.tech"      # ← your Neon host
+NEON_HOST = "ep-blue-wind-anin6o30-pooler.c-6.us-east-1.aws.neon.tech"
 NEON_PORT = 5432
-NEON_DATABASE = "neondb"                                        # ← your database name
-NEON_USER = "neondb_owner"                                # ← your Neon user
-NEON_PASSWORD = "npg_uIt2cPJTE4aL"                  # ← your Neon password
+NEON_DATABASE = "neondb"
+NEON_USER = "neondb_owner"
+NEON_PASSWORD = "npg_uIt2cPJTE4aL"
 
 def get_neon_connection():
     return psycopg2.connect(
@@ -50,7 +50,7 @@ def normalize_well_name(name):
     if not name:
         return ''
     name = name.strip().upper()
-    name = ' '.join(name.split())  # collapse spaces
+    name = ' '.join(name.split())
     for prefix in ['BPX_', 'BPX ', 'FME_', 'FME ', 'BRAVO KILO ']:
         if name.startswith(prefix):
             name = name[len(prefix):].strip()
@@ -78,14 +78,6 @@ def safe_float(val):
     except:
         return None
 
-def safe_int(val):
-    if val is None or pd.isna(val):
-        return None
-    try:
-        return int(float(val))
-    except:
-        return None
-
 def find_well_id(well_name_raw):
     well_name_norm = normalize_well_name(well_name_raw)
     logger.info(f"Normalized well name: '{well_name_norm}' (original: '{well_name_raw}')")
@@ -93,7 +85,7 @@ def find_well_id(well_name_raw):
     conn = get_neon_connection()
     cur = conn.cursor()
 
-    # 1. Case-insensitive exact match on original
+    # 1. Exact match on original
     cur.execute('SELECT id, well_name FROM "Wells" WHERE lower(well_name) = lower(%s)', (well_name_raw.strip(),))
     row = cur.fetchone()
     if row:
@@ -154,7 +146,7 @@ def upload_time_records(file_path):
         if suggestions:
             logger.info(f"Suggested matches:")
             for sugg, dist in suggestions:
-                logger.info(f"  - {sugg} (distance {dist})")
+                logger.info(f" - {sugg} (distance {dist})")
             print(f"No match for {filename} — suggested fixes: {[s[0] for s in suggestions]}")
         return 0
 
@@ -176,70 +168,62 @@ def upload_time_records(file_path):
     inserted = 0
     skipped = 0
     batch = []
-    current_days = 0.0  # Start at 0.000000 for first valid row
 
     for idx, row in df.iterrows():
-        date_str = clean_value(row.get('YYYY/MM/DD'))
-        time_str = clean_value(row.get('HH:MM:SS'))
-        hole_depth_ft = safe_float(row.get('Hole Depth (feet)'))
-        bit_depth_ft = safe_float(row.get('Bit Depth (feet)'))
-        rop_ft_hr = safe_float(row.get('Rate Of Penetration (ft_per_hr)'))
-        hook_load_klbs = safe_float(row.get('Hook Load (klbs)'))
-        differential_pressure_psi = safe_float(row.get('Differential Pressure (psi)'))
-        total_pump_output_gpm = safe_float(row.get('Total Pump Output (gal_per_min)'))
-        convertible_torque_kft_lb = safe_float(row.get('Convertible Torque (kft_lb)'))
-        tvd_ft = safe_float(row.get('Interpolated TVD (feet)'))
-        memos = clean_value(row.get('Memos'))
+        # ── Date & Time (split columns) ──
+        date_str = clean_value(row.get('YYYY/MM/DD')) or clean_value(row.iloc[0])
+        time_str = clean_value(row.get('HH:MM:SS')) or clean_value(row.iloc[1])
 
         if not date_str or not time_str:
-            logger.debug(f"Skipping row {idx} - missing date/time")
             skipped += 1
             continue
 
         try:
-            timestamp_str = f"{date_str} {time_str}"
-            timestamp = pd.to_datetime(timestamp_str, format='%m/%d/%Y %H:%M:%S', errors='coerce')
-            if pd.isna(timestamp):
-                timestamp = pd.to_datetime(timestamp_str, errors='coerce')
-            if pd.isna(timestamp):
-                raise ValueError("Could not parse")
-            timestamp_iso = timestamp.isoformat()
+            full_dt = pd.to_datetime(f"{date_str} {time_str}")
+            date_val = full_dt.date()
+            time_val = full_dt.time()
         except Exception as e:
-            logger.warning(f"Invalid date/time in row {idx} of {filename}: {date_str} {time_str} - {e}")
+            logger.warning(f"Invalid date/time in row {idx}: {e}")
             skipped += 1
             continue
 
-        # Increment days by 0.006944 for every valid row
-        time_data_tuple = (
+        # ── Exact column mapping to your Neon Time table ──
+        data_tuple = (
             well_id,
-            timestamp_iso,
-            current_days,
-            hole_depth_ft,
-            bit_depth_ft,
-            rop_ft_hr,
-            hook_load_klbs,
-            differential_pressure_psi,
-            total_pump_output_gpm,
-            convertible_torque_kft_lb,
-            tvd_ft,
-            memos,
+            date_val,                                      # date (DATE)
+            time_val,                                      # time (TIME)
+            safe_float(row.get('Days') or row.iloc[2]),    # days
+            safe_float(row.get('Hole Depth (feet)') or row.iloc[3]),   # hole_depth_ft
+            safe_float(row.get('Bit Depth (feet)') or row.iloc[4]),    # bit_depth_ft
+            safe_float(row.get('Rate Of Penetration (ft_per_hr)') or row.iloc[5]),  # rop_ft_hr
+            None,                                          # wob_klbs (not in CSV)
+            None,                                          # rotary_rpm (not in CSV)
+            None,                                          # standpipe_pressure_psi (not in CSV)
+            safe_float(row.get('Hook Load (klbs)') or row.iloc[6]),     # hook_load_klbs
+            safe_float(row.get('Differential Pressure (psi)') or row.iloc[7]),  # differential_pressure_psi
+            None,                                          # flow_percent (not in CSV)
+            safe_float(row.get('Total Pump Output (gal_per_min)') or row.iloc[8]),  # total_pump_output_gpm
+            safe_float(row.get('Convertible Torque (kft_lb)') or row.iloc[9]),     # convertible_torque_kft_lb
+            safe_float(row.get('Interpolated TVD (feet)') or row.iloc[10]),       # tvd_ft
+            clean_value(row.get('Memos') or row.iloc[11])  # memos
         )
 
-        batch.append(time_data_tuple)
+        batch.append(data_tuple)
 
-        # Batch insert every 100 rows
-        if len(batch) >= 100:
+        # Batch insert every 500 rows (fast & memory-safe)
+        if len(batch) >= 500:
             conn = get_neon_connection()
             cur = conn.cursor()
             try:
                 execute_values(cur,
                     """
                     INSERT INTO "Time" (
-                        well_id, timestamp, days, hole_depth_ft, bit_depth_ft, rop_ft_hr,
-                        hook_load_klbs, differential_pressure_psi, total_pump_output_gpm,
+                        well_id, date, time, days, hole_depth_ft, bit_depth_ft, rop_ft_hr,
+                        wob_klbs, rotary_rpm, standpipe_pressure_psi, hook_load_klbs,
+                        differential_pressure_psi, flow_percent, total_pump_output_gpm,
                         convertible_torque_kft_lb, tvd_ft, memos
                     ) VALUES %s
-                    ON CONFLICT (well_id, timestamp) DO NOTHING
+                    ON CONFLICT (well_id, date, time) DO NOTHING
                     """,
                     batch
                 )
@@ -253,8 +237,6 @@ def upload_time_records(file_path):
                 conn.close()
             batch = []
 
-        current_days += 0.006944  # increment for next row
-
     # Final batch
     if batch:
         conn = get_neon_connection()
@@ -263,18 +245,19 @@ def upload_time_records(file_path):
             execute_values(cur,
                 """
                 INSERT INTO "Time" (
-                    well_id, timestamp, days, hole_depth_ft, bit_depth_ft, rop_ft_hr,
-                    hook_load_klbs, differential_pressure_psi, total_pump_output_gpm,
+                    well_id, date, time, days, hole_depth_ft, bit_depth_ft, rop_ft_hr,
+                    wob_klbs, rotary_rpm, standpipe_pressure_psi, hook_load_klbs,
+                    differential_pressure_psi, flow_percent, total_pump_output_gpm,
                     convertible_torque_kft_lb, tvd_ft, memos
                 ) VALUES %s
-                ON CONFLICT (well_id, timestamp) DO NOTHING
+                ON CONFLICT (well_id, date, time) DO NOTHING
                 """,
                 batch
             )
             conn.commit()
             inserted += len(batch)
         except Exception as e:
-            logger.error(f"Final batch insert failed: {str(e)}")
+            logger.error(f"Final batch failed: {str(e)}")
             skipped += len(batch)
         finally:
             cur.close()
@@ -287,21 +270,19 @@ def process_folder(folder_path):
     print(f"\n=== Importing Time Records: {folder_path} ===")
     logger.info(f"Batch started for Time records: {folder_path}")
 
-    excel_files = [os.path.join(root, f) for root, dirs, files in os.walk(folder_path)
-                   for f in files if f.lower().endswith(('.xlsx', '.csv'))]
+    time_files = [os.path.join(root, f) for root, dirs, files in os.walk(folder_path)
+                  for f in files if f.lower().endswith(('.xlsx', '.csv')) and f.lower().startswith('time_')]
 
-    total_files = len(excel_files)
-    print(f"Found {total_files} files")
-    logger.info(f"Found {total_files} files")
+    total_files = len(time_files)
+    print(f"Found {total_files} Time files")
 
     if total_files == 0:
-        print("No files found.")
+        print("No Time files found.")
         return
 
     total_inserted = 0
-
     with tqdm(total=total_files, desc="Time Records", unit="file") as pbar:
-        for file_path in excel_files:
+        for file_path in time_files:
             inserted = upload_time_records(file_path)
             total_inserted += inserted
             pbar.update(1)
@@ -311,7 +292,6 @@ def process_folder(folder_path):
     logger.info(f"Batch complete. Total inserted: {total_inserted}")
 
 def run_time_import():
-    # This is the function app.py will call
     folder = os.path.join("uploads", "time")
     process_folder(folder)
     return "Time import completed successfully"
