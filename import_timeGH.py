@@ -1,4 +1,4 @@
-# timeGH.py - Fast importer with synthetic 'Days' column (incremental per row)
+# timeGH.py - Production importer for high-frequency drilling time records
 import pandas as pd
 import os
 from tqdm import tqdm
@@ -45,7 +45,7 @@ def normalize_name(name):
     if not name: return ''
     name = str(name).strip().upper()
     name = ' '.join(name.split())
-    for prefix in ['TIME_', 'FME_', 'RECAP_', 'FED COM', 'STATE COM', 'FEDERAL COM', 'COM ', 'FME3_', 'BPX_', 'FMM ', 'ELEVATE ', 'FED ', 'STATE ', 'FEDERAL ', '601H', '602H', '603H', '604H', '701H', '702H', '703H', '704H', '705H', '706H', '801H', '802H', '803H', '804H', '805H', '806H']:
+    for prefix in ['TIME_', 'FME_', 'RECAP_', 'FED COM', 'STATE COM', 'FEDERAL COM', 'COM ', 'FME3_', 'BPX_', 'FMM ', 'ELEVATE ', 'FED ', 'STATE ', 'FEDERAL ', 'FED FED', '601H', '602H', '603H', '604H', '701H', '702H', '703H', '704H', '705H', '706H', '801H', '802H', '803H', '804H', '805H', '806H']:
         name = name.replace(prefix, '').strip()
     return name
 
@@ -58,7 +58,7 @@ def find_well_id(filename):
         cur.close(); conn.close(); return row[0]
     
     guess1 = normalize_name(filename)
-    guess2 = normalize_name(filename.replace('FED COM', '').replace('ELEVATE', ''))
+    guess2 = normalize_name(filename.replace('FED COM', '').replace('ELEVATE', '').replace('FED FED', ''))
     logger.info(f"DEBUG - Filename: {filename} | Guesses: '{guess1}' and '{guess2}'")
     
     cur.execute('SELECT id FROM "Wells" WHERE well_name ILIKE %s OR well_name ILIKE %s OR well_name ILIKE %s LIMIT 1', 
@@ -146,28 +146,30 @@ def upload_time_records(file_path, downsample_every=1):
     print(f"→ Inserted {inserted} records")
     return inserted
 
-# ── Run mode ─────────────────────────────────────────────────────────────
-def run_time_import(downsample_every=1, single_file=None):
-    folder = os.path.join("uploads", "time")
-    if single_file:
-        file_path = os.path.join(folder, single_file)
-        if os.path.exists(file_path):
-            upload_time_records(file_path, downsample_every)
-        else:
-            print(f"File not found: {single_file}")
-        return
-    # Normal folder mode
-    files = [os.path.join(root, f) for root, dirs, files in os.walk(folder)
+# ── Batch processor ──────────────────────────────────────────────────────
+def process_folder(folder_path, downsample_every=1):
+    print(f"\n=== Importing Time Records (downsample every {downsample_every}) ===")
+    files = [os.path.join(root, f) for root, dirs, files in os.walk(folder_path)
              for f in files if f.lower().endswith(('.xlsx', '.csv'))]
+    
     total_inserted = 0
     with tqdm(total=len(files), desc="Time Records", unit="file") as pbar:
         for file_path in files:
             inserted = upload_time_records(file_path, downsample_every)
             total_inserted += inserted
             pbar.update(1)
+    
     print(f"\n=== Complete ===")
     print(f"Total time records inserted: {total_inserted}")
 
+def run_time_import(downsample_every=1):
+    folder = os.path.join("uploads", "time")
+    process_folder(folder, downsample_every)
+    return "Time import completed successfully"
+
 if __name__ == "__main__":
-    # Test Elevate only
-    run_time_import(downsample_every=1, single_file="Time_ELEVATE FED COM 601H.csv")
+    # Production mode - processes entire folder
+    run_time_import(downsample_every=1)
+    
+    # To test ONE file only, comment the line above and uncomment:
+    # run_time_import(downsample_every=1, single_file="Time_ELEVATE FED COM 601H.csv")
