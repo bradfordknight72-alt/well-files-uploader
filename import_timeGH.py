@@ -45,8 +45,8 @@ def normalize_name(name):
     if not name: return ''
     name = str(name).strip().upper()
     name = ' '.join(name.split())
-    # Aggressive cleaning for every possible variation
-    for prefix in ['TIME_', 'FME_', 'RECAP_', 'FED COM', 'STATE COM', 'FEDERAL COM', 'COM ', 'FME3_', 'BPX_', 'FMM ', 'ELEVATE ', 'FED ', 'STATE ']:
+    # Ultra-aggressive cleaning for every variation
+    for prefix in ['TIME_', 'FME_', 'RECAP_', 'FED COM', 'STATE COM', 'FEDERAL COM', 'COM ', 'FME3_', 'BPX_', 'FMM ', 'ELEVATE ', 'FED ', 'STATE ', 'FEDERAL ', '601H', '602H', '603H', '604H', '701H', '702H', '703H', '704H', '705H', '706H', '801H', '802H', '803H', '804H', '805H', '806H']:
         name = name.replace(prefix, '').strip()
     return name
 
@@ -59,9 +59,9 @@ def find_well_id(filename):
     if row:
         cur.close(); conn.close(); return row[0]
     
-    # 2. Super-aggressive normalized guesses
+    # 2. Ultra-aggressive normalized guesses
     guess1 = normalize_name(filename)
-    guess2 = normalize_name(filename.replace('FED COM', '').replace('FEDERAL', ''))
+    guess2 = normalize_name(filename.replace('FED COM', '').replace('FEDERAL', '').replace('ELEVATE', ''))
     logger.info(f"Normalized guesses for {filename}: '{guess1}' and '{guess2}'")
     
     cur.execute('SELECT id FROM "Wells" WHERE well_name ILIKE %s OR well_name ILIKE %s OR well_name ILIKE %s LIMIT 1', 
@@ -110,7 +110,7 @@ def upload_time_records(file_path, downsample_every=1):
             continue
 
         days_val = current_days
-        current_days += 0.006944   # 10 seconds = 0.006944 days
+        current_days += 0.006944
 
         batch.append((
             well_id, date_val, time_val, days_val,
