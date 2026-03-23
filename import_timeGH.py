@@ -1,4 +1,4 @@
-# timeGH.py - Production importer for high-frequency drilling time records
+# timeGH.py - Simple production importer for high-frequency drilling time records
 import pandas as pd
 import os
 from tqdm import tqdm
@@ -47,19 +47,21 @@ def strip_time_prefix(filename):
         if name.startswith(prefix):
             name = name[len(prefix):]
             break
+    name = name.replace('.csv', '').replace('.xlsx', '').strip()
     return name
 
 def find_well_id(filename):
     conn = get_neon_connection()
     cur = conn.cursor()
-    # 1. Exact filename match
     cur.execute('SELECT id FROM "Wells" WHERE filename = %s LIMIT 1', (filename,))
     row = cur.fetchone()
     if row:
         cur.close(); conn.close(); return row[0]
     
-    # 2. Strip Time_ prefix and match well_name
     clean_name = strip_time_prefix(filename)
+    print(f"DEBUG - Clean name from filename: '{clean_name}'")
+    logger.info(f"DEBUG - Clean name from filename: '{clean_name}'")
+    
     cur.execute('SELECT id FROM "Wells" WHERE well_name ILIKE %s LIMIT 1', (f'%{clean_name}%',))
     row = cur.fetchone()
     cur.close(); conn.close()
