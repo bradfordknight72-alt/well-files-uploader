@@ -1,4 +1,4 @@
-# timeGH.py - Fast importer with synthetic 'Days' column (incremental per 10-sec row)
+# timeGH.py - Fast importer with synthetic 'Days' column (incremental per row)
 import pandas as pd
 import os
 from tqdm import tqdm
@@ -41,26 +41,38 @@ def safe_float(val):
     try: return float(val)
     except: return None
 
+def normalize_name(name):
+    if not name: return ''
+    name = str(name).strip().upper()
+    name = ' '.join(name.split())
+    for prefix in ['TIME_', 'FME_', 'RECAP_', 'FED COM', 'STATE COM', 'FEDERAL COM', 'COM ', 'FME3_', 'BPX_', 'FMM ']:
+        name = name.replace(prefix, '').strip()
+    return name
+
 def find_well_id(filename):
     conn = get_neon_connection()
     cur = conn.cursor()
+    # 1. Exact filename match
     cur.execute('SELECT id FROM "Wells" WHERE filename = %s LIMIT 1', (filename,))
     row = cur.fetchone()
     if row:
         cur.close(); conn.close(); return row[0]
-    well_guess = filename.replace('Time_', '').replace('.csv','').replace('.xlsx','').strip()
-    cur.execute('SELECT id FROM "Wells" WHERE well_name ILIKE %s LIMIT 1', (f'%{well_guess}%',))
+    # 2. Super-strong normalized match
+    well_guess = normalize_name(filename)
+    cur.execute('SELECT id FROM "Wells" WHERE well_name ILIKE %s OR well_name ILIKE %s LIMIT 1', 
+                (f'%{well_guess}%', f'%{well_guess.replace("FED","")}%'))
     row = cur.fetchone()
     cur.close(); conn.close()
     return row[0] if row else None
 
-# ── Upload one file (with synthetic Days column) ────────────────────────
+# ── Upload function (synthetic Days logic) ───────────────────────────────
 def upload_time_records(file_path, downsample_every=1):
     filename = os.path.basename(file_path)
     print(f"  Processing: {filename}")
     well_id = find_well_id(filename)
     if not well_id:
         print(f"    WARNING: No well match — skipping")
+        logger.warning(f"No well match for {filename}")
         return 0
 
     # Load file
@@ -69,24 +81,20 @@ def upload_time_records(file_path, downsample_every=1):
     else:
         df = pd.read_csv(file_path)
 
-    # Downsample if requested (for charting speed)
     if downsample_every > 1:
         df = df.iloc[::downsample_every]
 
-    print(f"    Loaded {len(df)} rows (downsampled every {downsample_every})")
+    print(f"    Loaded {len(df)} rows")
 
-    # Synthetic Days logic — ALWAYS use incremental value (ignore CSV 'Days')
+    # Synthetic Days logic (exactly as you requested)
     current_days = 0.0
     batch = []
     inserted = 0
-    skipped = 0
 
     for _, row in df.iterrows():
         date_str = clean_value(row.get('YYYY/MM/DD'))
         time_str = clean_value(row.get('HH:MM:SS'))
-
         if not date_str or not time_str:
-            skipped += 1
             continue
 
         try:
@@ -94,18 +102,13 @@ def upload_time_records(file_path, downsample_every=1):
             date_val = full_dt.date()
             time_val = full_dt.time()
         except:
-            skipped += 1
             continue
 
-        # Use synthetic days (increment per valid row)
         days_val = current_days
-        current_days += 0.006944  # 10 seconds = 0.006944 days
+        current_days += 0.006944   # 10 seconds = 0.006944 days
 
         batch.append((
-            well_id,
-            date_val,
-            time_val,
-            days_val,                    # ← synthetic Days column
+            well_id, date_val, time_val, days_val,
             safe_float(row.get('Hole Depth (feet)')),
             safe_float(row.get('Bit Depth (feet)')),
             safe_float(row.get('Rate Of Penetration (ft_per_hr)')),
@@ -117,67 +120,56 @@ def upload_time_records(file_path, downsample_every=1):
             clean_value(row.get('Memos'))
         ))
 
-        # Batch insert every 500 rows
         if len(batch) >= 500:
             conn = get_neon_connection()
             cur = conn.cursor()
-            try:
-                execute_values(cur,
-                    """
-                    INSERT INTO "Time" (
-                        well_id, date, time, days, hole_depth_ft, bit_depth_ft,
-                        rop_ft_hr, hook_load_klbs, differential_pressure_psi,
-                        total_pump_output_gpm, convertible_torque_kft_lb, tvd_ft, memos
-                    ) VALUES %s
-                    ON CONFLICT (well_id, date, time) DO NOTHING
-                    """,
-                    batch
-                )
-                conn.commit()
-                inserted += len(batch)
-            except Exception as e:
-                logger.error(f"Batch failed: {e}")
-            finally:
-                cur.close()
-                conn.close()
+            execute_values(cur,
+                """INSERT INTO "Time" (well_id, date, time, days, hole_depth_ft, bit_depth_ft, rop_ft_hr, hook_load_klbs, differential_pressure_psi, total_pump_output_gpm, convertible_torque_kft_lb, tvd_ft, memos)
+                VALUES %s ON CONFLICT (well_id, date, time) DO NOTHING""",
+                batch
+            )
+            conn.commit()
+            inserted += len(batch)
             batch = []
+            cur.close()
+            conn.close()
 
     # Final batch
     if batch:
         conn = get_neon_connection()
         cur = conn.cursor()
-        try:
-            execute_values(cur, """INSERT INTO "Time" (well_id, date, time, days, hole_depth_ft, bit_depth_ft, rop_ft_hr, hook_load_klbs, differential_pressure_psi, total_pump_output_gpm, convertible_torque_kft_lb, tvd_ft, memos) VALUES %s ON CONFLICT (well_id, date, time) DO NOTHING""", batch)
-            conn.commit()
-            inserted += len(batch)
-        finally:
-            cur.close()
-            conn.close()
+        execute_values(cur, """INSERT INTO "Time" (well_id, date, time, days, hole_depth_ft, bit_depth_ft, rop_ft_hr, hook_load_klbs, differential_pressure_psi, total_pump_output_gpm, convertible_torque_kft_lb, tvd_ft, memos) VALUES %s ON CONFLICT (well_id, date, time) DO NOTHING""", batch)
+        conn.commit()
+        inserted += len(batch)
+        cur.close()
+        conn.close()
 
-    print(f"→ Inserted {inserted} records ({skipped} skipped)")
-    logger.info(f"Inserted {inserted} records for {filename}")
+    print(f"→ Inserted {inserted} records")
     return inserted
 
-# ── Batch processor ──────────────────────────────────────────────────────
-def process_folder(folder_path, downsample_every=1):
-    print(f"\n=== Importing Time Records (downsample every {downsample_every}) ===")
-    files = [os.path.join(root, f) for root, dirs, files in os.walk(folder_path)
+# ── Run mode (whole folder OR single file) ───────────────────────────────
+def run_time_import(downsample_every=1, single_file=None):
+    folder = os.path.join("uploads", "time")
+    if single_file:
+        file_path = os.path.join(folder, single_file)
+        if os.path.exists(file_path):
+            upload_time_records(file_path, downsample_every)
+        else:
+            print(f"File not found: {single_file}")
+        return
+    # Normal folder mode
+    files = [os.path.join(root, f) for root, dirs, files in os.walk(folder)
              for f in files if f.lower().endswith(('.xlsx', '.csv'))]
-    
     total_inserted = 0
     with tqdm(total=len(files), desc="Time Records", unit="file") as pbar:
         for file_path in files:
             inserted = upload_time_records(file_path, downsample_every)
             total_inserted += inserted
             pbar.update(1)
-    
     print(f"\n=== Complete ===")
     print(f"Total time records inserted: {total_inserted}")
 
-def run_time_import(downsample_every=1):
-    folder = os.path.join("uploads", "time")
-    process_folder(folder, downsample_every)
-    return "Time import completed successfully"
-
 if __name__ == "__main__":
-    run_time_import(downsample_every=1)   # ← change to 5 or 10 for faster charting
+    # For testing ONE file:
+    run_time_import(downsample_every=1, single_file="Time_ELEVATE FED COM 601H.csv")
+    # For full folder: comment the line above and use run_time_import(downsample_every=1)
