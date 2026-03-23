@@ -45,6 +45,7 @@ def normalize_name(name):
     if not name: return ''
     name = str(name).strip().upper()
     name = ' '.join(name.split())
+    # Ultra-aggressive cleaning for every possible variation
     for prefix in ['TIME_', 'FME_', 'RECAP_', 'FED COM', 'STATE COM', 'FEDERAL COM', 'COM ', 'FME3_', 'BPX_', 'FMM ', 'ELEVATE ', 'FED ', 'STATE ', 'FEDERAL ', 'FED FED', '601H', '602H', '603H', '604H', '701H', '702H', '703H', '704H', '705H', '706H', '801H', '802H', '803H', '804H', '805H', '806H']:
         name = name.replace(prefix, '').strip()
     return name
@@ -168,8 +169,4 @@ def run_time_import(downsample_every=1):
     return "Time import completed successfully"
 
 if __name__ == "__main__":
-    # Production mode - processes entire folder
     run_time_import(downsample_every=1)
-    
-    # To test ONE file only, comment the line above and uncomment:
-    # run_time_import(downsample_every=1, single_file="Time_ELEVATE FED COM 601H.csv")
