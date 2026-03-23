@@ -45,7 +45,8 @@ def normalize_name(name):
     if not name: return ''
     name = str(name).strip().upper()
     name = ' '.join(name.split())
-    for prefix in ['TIME_', 'FME_', 'RECAP_', 'FED COM', 'STATE COM', 'FEDERAL COM', 'COM ', 'FME3_', 'BPX_', 'FMM ']:
+    # Aggressive cleaning for every possible variation
+    for prefix in ['TIME_', 'FME_', 'RECAP_', 'FED COM', 'STATE COM', 'FEDERAL COM', 'COM ', 'FME3_', 'BPX_', 'FMM ', 'ELEVATE ', 'FED ', 'STATE ']:
         name = name.replace(prefix, '').strip()
     return name
 
@@ -57,10 +58,14 @@ def find_well_id(filename):
     row = cur.fetchone()
     if row:
         cur.close(); conn.close(); return row[0]
-    # 2. Super-strong normalized match
-    well_guess = normalize_name(filename)
-    cur.execute('SELECT id FROM "Wells" WHERE well_name ILIKE %s OR well_name ILIKE %s LIMIT 1', 
-                (f'%{well_guess}%', f'%{well_guess.replace("FED","")}%'))
+    
+    # 2. Super-aggressive normalized guesses
+    guess1 = normalize_name(filename)
+    guess2 = normalize_name(filename.replace('FED COM', '').replace('FEDERAL', ''))
+    logger.info(f"Normalized guesses for {filename}: '{guess1}' and '{guess2}'")
+    
+    cur.execute('SELECT id FROM "Wells" WHERE well_name ILIKE %s OR well_name ILIKE %s OR well_name ILIKE %s LIMIT 1', 
+                (f'%{guess1}%', f'%{guess2}%', f'%{guess1.replace(" ", "")}%'))
     row = cur.fetchone()
     cur.close(); conn.close()
     return row[0] if row else None
@@ -147,7 +152,7 @@ def upload_time_records(file_path, downsample_every=1):
     print(f"→ Inserted {inserted} records")
     return inserted
 
-# ── Run mode (whole folder OR single file) ───────────────────────────────
+# ── Run mode (single file for testing) ───────────────────────────────────
 def run_time_import(downsample_every=1, single_file=None):
     folder = os.path.join("uploads", "time")
     if single_file:
@@ -170,6 +175,6 @@ def run_time_import(downsample_every=1, single_file=None):
     print(f"Total time records inserted: {total_inserted}")
 
 if __name__ == "__main__":
-    # For testing ONE file:
+    # Test Elevate only
     run_time_import(downsample_every=1, single_file="Time_ELEVATE FED COM 601H.csv")
     # For full folder: comment the line above and use run_time_import(downsample_every=1)
