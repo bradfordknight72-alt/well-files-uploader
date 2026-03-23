@@ -45,7 +45,6 @@ def normalize_name(name):
     if not name: return ''
     name = str(name).strip().upper()
     name = ' '.join(name.split())
-    # Ultra-aggressive cleaning for every variation
     for prefix in ['TIME_', 'FME_', 'RECAP_', 'FED COM', 'STATE COM', 'FEDERAL COM', 'COM ', 'FME3_', 'BPX_', 'FMM ', 'ELEVATE ', 'FED ', 'STATE ', 'FEDERAL ', '601H', '602H', '603H', '604H', '701H', '702H', '703H', '704H', '705H', '706H', '801H', '802H', '803H', '804H', '805H', '806H']:
         name = name.replace(prefix, '').strip()
     return name
@@ -53,16 +52,14 @@ def normalize_name(name):
 def find_well_id(filename):
     conn = get_neon_connection()
     cur = conn.cursor()
-    # 1. Exact filename match
     cur.execute('SELECT id FROM "Wells" WHERE filename = %s LIMIT 1', (filename,))
     row = cur.fetchone()
     if row:
         cur.close(); conn.close(); return row[0]
     
-    # 2. Ultra-aggressive normalized guesses
     guess1 = normalize_name(filename)
-    guess2 = normalize_name(filename.replace('FED COM', '').replace('FEDERAL', '').replace('ELEVATE', ''))
-    logger.info(f"Normalized guesses for {filename}: '{guess1}' and '{guess2}'")
+    guess2 = normalize_name(filename.replace('FED COM', '').replace('ELEVATE', ''))
+    logger.info(f"DEBUG - Filename: {filename} | Guesses: '{guess1}' and '{guess2}'")
     
     cur.execute('SELECT id FROM "Wells" WHERE well_name ILIKE %s OR well_name ILIKE %s OR well_name ILIKE %s LIMIT 1', 
                 (f'%{guess1}%', f'%{guess2}%', f'%{guess1.replace(" ", "")}%'))
@@ -80,7 +77,6 @@ def upload_time_records(file_path, downsample_every=1):
         logger.warning(f"No well match for {filename}")
         return 0
 
-    # Load file
     if file_path.lower().endswith('.xlsx'):
         df = pd.read_excel(file_path)
     else:
@@ -91,7 +87,6 @@ def upload_time_records(file_path, downsample_every=1):
 
     print(f"    Loaded {len(df)} rows")
 
-    # Synthetic Days logic (exactly as you requested)
     current_days = 0.0
     batch = []
     inserted = 0
@@ -139,7 +134,6 @@ def upload_time_records(file_path, downsample_every=1):
             cur.close()
             conn.close()
 
-    # Final batch
     if batch:
         conn = get_neon_connection()
         cur = conn.cursor()
@@ -152,7 +146,7 @@ def upload_time_records(file_path, downsample_every=1):
     print(f"→ Inserted {inserted} records")
     return inserted
 
-# ── Run mode (single file for testing) ───────────────────────────────────
+# ── Run mode ─────────────────────────────────────────────────────────────
 def run_time_import(downsample_every=1, single_file=None):
     folder = os.path.join("uploads", "time")
     if single_file:
@@ -177,4 +171,3 @@ def run_time_import(downsample_every=1, single_file=None):
 if __name__ == "__main__":
     # Test Elevate only
     run_time_import(downsample_every=1, single_file="Time_ELEVATE FED COM 601H.csv")
-    # For full folder: comment the line above and use run_time_import(downsample_every=1)
