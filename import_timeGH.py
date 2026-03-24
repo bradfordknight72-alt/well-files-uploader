@@ -1,4 +1,5 @@
 # timeGH.py - Production importer for high-frequency drilling time records
+# Auto-cleans bad depth jumps (>1000 ft), negative depths, or null depths
 import pandas as pd
 import os
 from tqdm import tqdm
@@ -67,7 +68,7 @@ def find_well_id(filename):
     cur.close(); conn.close()
     return row[0] if row else None
 
-# ── Upload function (synthetic Days logic) ───────────────────────────────
+# ── Upload function (synthetic Days + auto-clean bad depths) ─────────────
 def upload_time_records(file_path, downsample_every=1):
     filename = os.path.basename(file_path)
     print(f"  Processing: {filename}")
@@ -90,7 +91,9 @@ def upload_time_records(file_path, downsample_every=1):
     current_days = 0.0
     batch = []
     inserted = 0
+    skipped_bad = 0
 
+    prev_depth = None
     for _, row in df.iterrows():
         date_str = clean_value(row.get('YYYY/MM/DD'))
         time_str = clean_value(row.get('HH:MM:SS'))
@@ -104,12 +107,24 @@ def upload_time_records(file_path, downsample_every=1):
         except:
             continue
 
+        depth = safe_float(row.get('Hole Depth (feet)'))
+
+        # Auto-clean bad depth jumps
+        if depth is None or depth < 0:
+            skipped_bad += 1
+            continue
+        if prev_depth is not None and abs(depth - prev_depth) > 1000:
+            skipped_bad += 1
+            continue
+
+        prev_depth = depth
+
         days_val = current_days
         current_days += 0.006944
 
         batch.append((
             well_id, date_val, time_val, days_val,
-            safe_float(row.get('Hole Depth (feet)')),
+            depth,
             safe_float(row.get('Bit Depth (feet)')),
             safe_float(row.get('Rate Of Penetration (ft_per_hr)')),
             safe_float(row.get('Hook Load (klbs)')),
@@ -143,7 +158,7 @@ def upload_time_records(file_path, downsample_every=1):
         cur.close()
         conn.close()
 
-    print(f"→ Inserted {inserted} records")
+    print(f"→ Inserted {inserted} records ({skipped_bad} bad depth rows skipped)")
     return inserted
 
 # ── Batch processor ──────────────────────────────────────────────────────
@@ -168,4 +183,4 @@ def run_time_import(downsample_every=1):
     return "Time import completed successfully"
 
 if __name__ == "__main__":
-    run_time_import(downsample_every=1)
+    run_time_import(downsample_every=5)
