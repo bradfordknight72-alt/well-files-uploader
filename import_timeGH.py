@@ -1,4 +1,4 @@
-# import_timeGH.py - Production importer for Render/FastAPI (matches latest local time.py)
+# import_timeGH.py - Production importer for Render (multi-file + auto-delete after success)
 import pandas as pd
 import os
 from tqdm import tqdm
@@ -190,8 +190,25 @@ def upload_time_records(file_path, downsample_every=5):
     logger.info(f"Finished {filename}: {inserted} inserted, {skipped_bad} skipped")
     return inserted
 
-def process_folder(folder_path, downsample_every=5):
+def process_folder(folder_path, downsample_every=5, single_file=None):
     print(f"\n=== Importing Time Records (downsample every {downsample_every}) ===")
+    
+    if single_file:
+        file_path = os.path.join(folder_path, single_file)
+        if os.path.exists(file_path):
+            inserted = upload_time_records(file_path, downsample_every)
+            # Auto-delete after successful import
+            try:
+                os.remove(file_path)
+                print(f"    ✓ Successfully deleted {single_file} after import")
+                logger.info(f"Deleted {single_file} after successful import")
+            except Exception as e:
+                print(f"    Warning: Could not delete {single_file}: {e}")
+            return f"Imported {inserted} records from {single_file}"
+        else:
+            return f"File not found: {single_file}"
+    
+    # Full folder mode
     files = [os.path.join(root, f) for root, dirs, files in os.walk(folder_path)
              for f in files if f.lower().endswith(('.xlsx', '.csv'))]
     
@@ -200,15 +217,21 @@ def process_folder(folder_path, downsample_every=5):
         for file_path in files:
             inserted = upload_time_records(file_path, downsample_every)
             total_inserted += inserted
+            # Auto-delete after successful import
+            try:
+                os.remove(file_path)
+                print(f"    ✓ Deleted {os.path.basename(file_path)} after import")
+                logger.info(f"Deleted {os.path.basename(file_path)} after successful import")
+            except Exception as e:
+                print(f"    Warning: Could not delete {os.path.basename(file_path)}: {e}")
             pbar.update(1)
     
     print(f"\n=== Complete ===")
     print(f"Total time records inserted: {total_inserted}")
 
-def run_time_import(downsample_every=5):
+def run_time_import(downsample_every=5, single_file=None):
     folder = os.path.join("uploads", "time")
-    process_folder(folder, downsample_every)
-    return "Time import completed successfully"
+    return process_folder(folder, downsample_every, single_file)
 
 if __name__ == "__main__":
     run_time_import(downsample_every=5)
