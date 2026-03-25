@@ -1,4 +1,4 @@
-# interval_detailsGH.py - FINAL MASTER MERGE (no transaction abort, full summary skip, MasterProducts lookup)
+# interval_detailsGH.py - FIXED for Culpepper + heavy debug on cell H2
 
 import pandas as pd
 import os
@@ -63,54 +63,61 @@ def get_master_product(cur, product_name):
         return row[0], row[1]
     return product_name, None
 
-def process_interval_folder(folder_path):
-    processed_dir = os.path.join(folder_path, "processed")
-    os.makedirs(processed_dir, exist_ok=True)
+def normalize_well_name(name):
+    if not name: return ''
+    name = str(name).strip().upper()
+    name = ' '.join(name.split())
+    # Remove any leading "Interval Detail" or similar prefixes
+    for prefix in ['INTERVAL DETAIL_', 'INTERVAL DETAIL ', 'Interval Detail_', 'Interval Detail ']:
+        if name.startswith(prefix):
+            name = name[len(prefix):].strip()
+            break
+    return name
 
-    logger.info(f"=== Starting interval import: {folder_path} ===")
-    print(f"\n=== Importing Drilling Intervals: {folder_path} ===")
+def find_well_id(well_name_raw):
+    well_name_norm = normalize_well_name(well_name_raw)
+    logger.info(f"DEBUG CELL H2 RAW: '{well_name_raw}'")
+    logger.info(f"Normalized well name: '{well_name_norm}'")
 
-    files = [os.path.join(root, f) for root, dirs, fs in os.walk(folder_path)
-             for f in fs if f.lower().endswith('.xlsx') and "processed" not in root]
+    conn = get_neon_connection()
+    cur = conn.cursor()
 
-    with tqdm(total=len(files), desc="Interval Details", unit="file") as pbar:
-        for fpath in files:
-            fname = os.path.basename(fpath)
-            try:
-                inserted = upload_interval_details(fpath)
-                logger.info(f"SUCCESS: {fname} → {inserted} intervals")
-                move(fpath, os.path.join(processed_dir, fname))
-                logger.info(f"Moved {fname} to processed folder")
-            except Exception as e:
-                logger.error(f"FAILED {fname}: {e}")
-                print(f"FAILED {fname}: {e}")
-                move(fpath, os.path.join(processed_dir, fname))
-            pbar.update(1)
+    # 1. Exact original (most reliable)
+    cur.execute('SELECT id, well_name FROM "Wells" WHERE lower(well_name) = lower(%s)', (well_name_raw.strip(),))
+    row = cur.fetchone()
+    if row:
+        cur.close(); conn.close(); return row[0], row[1], "exact original"
+
+    # 2. Exact normalized
+    cur.execute('SELECT id, well_name FROM "Wells" WHERE well_name = %s', (well_name_norm,))
+    row = cur.fetchone()
+    if row:
+        cur.close(); conn.close(); return row[0], row[1], "exact normalized"
+
+    # 3. Partial ILIKE
+    cur.execute('SELECT id, well_name FROM "Wells" WHERE well_name ILIKE %s LIMIT 1', (f"%{well_name_norm}%",))
+    row = cur.fetchone()
+    if row:
+        cur.close(); conn.close(); return row[0], row[1], "partial"
+
+    cur.close(); conn.close()
+    return None, None, None
 
 def upload_interval_details(file_path):
     df = pd.read_excel(file_path, sheet_name='Sheet1', header=None)
     logger.info(f"Loaded {len(df)} rows from Sheet1")
 
-    well_name_raw = clean_value(df.iloc[1, 7])
+    well_name_raw = clean_value(df.iloc[1, 7])   # H2 cell
     if not well_name_raw:
-        logger.warning("No well name found")
+        logger.warning("No well name found in cell H2")
         return 0
 
-    conn = get_neon_connection()
-    cur = conn.cursor()
-    cur.execute('SELECT id FROM "Wells" WHERE lower(well_name) = lower(%s)', (well_name_raw.strip(),))
-    row = cur.fetchone()
-    if not row:
-        cur.execute('SELECT id FROM "Wells" WHERE well_name ILIKE %s LIMIT 1', (f"%{well_name_raw}%",))
-        row = cur.fetchone()
-    if not row:
+    well_id, matched_name, match_type = find_well_id(well_name_raw)
+    if well_id is None:
         logger.warning(f"No well match for '{well_name_raw}'")
-        cur.close()
-        conn.close()
         return 0
-    well_id = row[0]
-    cur.close()
-    conn.close()
+
+    logger.info(f"✅ MATCHED '{well_name_raw}' → '{matched_name}' (ID {well_id}) via {match_type}")
 
     interval_row = 4
     interval_cols = [c for c in range(3, df.shape[1], 4) if clean_value(df.iloc[interval_row, c])]
@@ -162,14 +169,12 @@ def upload_interval_details(file_path):
 
         total_inserted += 1
 
-        # Products - strict bounds + aggressive summary skip
+        # Products
         product_batch = []
         for r in range(interval_row + 12, len(df)):
-            if r >= len(df):
-                break
+            if r >= len(df): break
             product = clean_value(df.iloc[r, 0])
-            if not product:
-                break
+            if not product: break
             lower = product.lower()
             if lower in ['', '0'] or any(term in lower for term in [
                 'product cost', 'mud volume', 'total cost', 'initial volume', 
@@ -184,8 +189,7 @@ def upload_interval_details(file_path):
             qty = safe_float(df.iloc[r, col])
             cost = safe_float(df.iloc[r, col + 3])
 
-            if qty is None and cost is None:
-                continue
+            if qty is None and cost is None: continue
 
             master_name, category = get_master_product(cur, product)
             product_batch.append((well_id, interval_id, interval_name, master_name, uom, qty, cost, category))
@@ -206,6 +210,30 @@ def upload_interval_details(file_path):
     cur.close()
     conn.close()
     return total_inserted
+
+def process_interval_folder(folder_path):
+    processed_dir = os.path.join(folder_path, "processed")
+    os.makedirs(processed_dir, exist_ok=True)
+
+    logger.info(f"=== Starting interval import: {folder_path} ===")
+    print(f"\n=== Importing Drilling Intervals: {folder_path} ===")
+
+    files = [os.path.join(root, f) for root, dirs, fs in os.walk(folder_path)
+             for f in fs if f.lower().endswith('.xlsx') and "processed" not in root]
+
+    with tqdm(total=len(files), desc="Interval Details", unit="file") as pbar:
+        for fpath in files:
+            fname = os.path.basename(fpath)
+            try:
+                inserted = upload_interval_details(fpath)
+                logger.info(f"SUCCESS: {fname} → {inserted} intervals")
+                move(fpath, os.path.join(processed_dir, fname))
+                logger.info(f"Moved {fname} to processed folder")
+            except Exception as e:
+                logger.error(f"FAILED {fname}: {e}")
+                print(f"FAILED {fname}: {e}")
+                move(fpath, os.path.join(processed_dir, fname))
+            pbar.update(1)
 
 def run_interval_import():
     folder = os.path.join("uploads", "interval_details")
