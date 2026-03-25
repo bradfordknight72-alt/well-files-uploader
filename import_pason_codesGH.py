@@ -242,14 +242,16 @@ def upload_pason_codes(file_path):
             conn = get_neon_connection()
             cur = conn.cursor()
             try:
+                # === FIXED BATCH INSERT FOR PasonCodes ===
                 execute_values(cur,
                     """
                     INSERT INTO "PasonCodes" (
-                        well_id, rig_name, well_name, date, shift, sequence,
-                        from_time, to_time, hours, time_code, time_code_desc,
-                        sub_code, sub_code_desc, details
+                        well_id, rig_name, date, shift, sequence, 
+                        from_time, to_time, hours, time_code, 
+                        time_code_desc, sub_code, sub_code_desc, 
+                        details, well_name
                     ) VALUES %s
-                    ON CONFLICT (well_id, date, from_time) DO NOTHING
+                    ON CONFLICT ON CONSTRAINT unique_pason_time_block DO NOTHING
                     """,
                     batch
                 )
