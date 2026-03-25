@@ -219,48 +219,61 @@ async def root():
 async def upload_files(files: List[UploadFile] = File(...), x_api_key: str = Header(None)):
     if x_api_key != "Momentum2012":
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    
     results = []
     for file in files:
-        file_path = UPLOAD_DIR / file.filename
-        try:
-            with open(file_path, "wb") as f:
-                shutil.copyfileobj(file.file, f)
-            lower_name = file.filename.lower()
-            script_key = None
-            target_folder = None
-            if 'recap' in lower_name:
-                script_key = "recaps"
-                target_folder = UPLOAD_DIR / "recaps"
-            elif 'interval' in lower_name or 'detail' in lower_name:
-                script_key = "interval_details"
-                target_folder = UPLOAD_DIR / "interval_details"
-            elif 'time' in lower_name:
-                script_key = "time"
-                target_folder = UPLOAD_DIR / "time"
-            elif 'pason' in lower_name or 'code' in lower_name:
-                script_key = "pason"
-                target_folder = UPLOAD_DIR / "pason"
-            else:
-                results.append(f"{file.filename}: no matching folder/script")
-                continue
-            target_folder.mkdir(parents=True, exist_ok=True)
-            target_path = target_folder / file.filename
-            shutil.move(file_path, target_path)
-            import_func = IMPORT_FUNCTIONS.get(script_key)
-            if not import_func:
-                results.append(f"{file.filename}: no matching function for {script_key}")
-                continue
-            logger.info(f"Running import function for {script_key}")
-            try:
-                result = import_func()
-                results.append(f"{file.filename}: imported successfully ({script_key})")
-                results.append(str(result) if result else "Done")
-            except Exception as e:
-                results.append(f"{file.filename}: import failed - {str(e)}")
-        except Exception as e:
-            results.append(f"{file.filename}: upload error - {str(e)}")
-    return {"message": f"Processed {len(files)} file(s)", "details": results}
+        lower_name = file.filename.lower()
+        script_key = None
+        target_folder = None
 
+        # More reliable detection
+        if 'recap' in lower_name:
+            script_key = "recaps"
+            target_folder = UPLOAD_DIR / "recaps"
+        elif 'interval' in lower_name or 'detail' in lower_name:
+            script_key = "interval_details"
+            target_folder = UPLOAD_DIR / "interval_details"
+        elif 'time' in lower_name:
+            script_key = "time"
+            target_folder = UPLOAD_DIR / "time"
+        elif 'pason' in lower_name or 'code' in lower_name:
+            script_key = "pason"
+            target_folder = UPLOAD_DIR / "pason"
+        else:
+            results.append(f"{file.filename}: no matching folder/script")
+            continue
+
+        # Create target folder if missing
+        target_folder.mkdir(parents=True, exist_ok=True)
+
+        # Save the file
+        final_path = target_folder / file.filename
+        try:
+            with open(final_path, "wb") as f:
+                shutil.copyfileobj(file.file, f)
+            
+            logger.info(f"✅ UPLOAD SUCCESS: Saved {file.filename} → {final_path}")
+            print(f"✅ UPLOAD SUCCESS: Saved {file.filename} → {final_path}")  # also to Render console
+
+            # Run the correct import function
+            import_func = IMPORT_FUNCTIONS.get(script_key)
+            if import_func:
+                logger.info(f"Running import function for {script_key}")
+                try:
+                    result = import_func()
+                    results.append(f"{file.filename}: imported successfully ({script_key})")
+                    results.append(str(result) if result else "Done")
+                except Exception as e:
+                    results.append(f"{file.filename}: import failed - {str(e)}")
+            else:
+                results.append(f"{file.filename}: no matching function for {script_key}")
+                
+        except Exception as e:
+            logger.error(f"UPLOAD ERROR for {file.filename}: {str(e)}")
+            results.append(f"{file.filename}: upload error - {str(e)}")
+
+    return {"message": f"Processed {len(files)} file(s)", "details": results}
+    
 # NEW: Clear Last Import
 @app.post("/clear_last_import")
 async def clear_last_import():
