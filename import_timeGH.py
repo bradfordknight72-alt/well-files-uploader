@@ -1,4 +1,4 @@
-# import_timeGH.py - Production importer for Render (multi-file + auto-delete + duplicate logging)
+# import_timeGH.py - Production importer for Render (flexible columns + synthetic days)
 import pandas as pd
 import os
 from tqdm import tqdm
@@ -88,7 +88,8 @@ def upload_time_records(file_path, downsample_every=5):
                              doublequote=True,
                              dtype=str)
 
-            numeric_cols = ['Days', 'Hole Depth (feet)', 'Bit Depth (feet)', 
+            # Convert only the columns we actually need
+            numeric_cols = ['Hole Depth (feet)', 'Bit Depth (feet)', 
                             'Rate Of Penetration (ft_per_hr)', 'Hook Load (klbs)',
                             'Differential Pressure (psi)', 'Total Pump Output (gal_per_min)',
                             'Convertible Torque (kft_lb)']
@@ -176,7 +177,6 @@ def upload_time_records(file_path, downsample_every=5):
                 conn.commit()
                 inserted += len(batch)
             except Exception as e:
-                # Count duplicates if ON CONFLICT skipped them
                 skipped_duplicates += len(batch)
                 logger.info(f"ON CONFLICT skipped {len(batch)} duplicate timestamps in {filename}")
             batch = []
@@ -207,7 +207,6 @@ def process_folder(folder_path, downsample_every=5, single_file=None):
         file_path = os.path.join(folder_path, single_file)
         if os.path.exists(file_path):
             inserted = upload_time_records(file_path, downsample_every)
-            # Auto-delete after successful import
             try:
                 os.remove(file_path)
                 print(f"    ✓ Successfully deleted {single_file} after import")
@@ -227,7 +226,6 @@ def process_folder(folder_path, downsample_every=5, single_file=None):
         for file_path in files:
             inserted = upload_time_records(file_path, downsample_every)
             total_inserted += inserted
-            # Auto-delete after successful import
             try:
                 os.remove(file_path)
                 print(f"    ✓ Deleted {os.path.basename(file_path)} after import")
