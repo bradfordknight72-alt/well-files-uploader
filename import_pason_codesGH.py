@@ -1,6 +1,5 @@
 # import_pason_codesGH.py
-# Standalone: import Pason Time Code data from CSV/Excel into 'PasonCodes' table
-# FIXED: column order now matches tuple + proper date handling + named constraint
+# SUPER-ROBUST: recursively finds ANY Pason_* file anywhere under uploads/
 
 import pandas as pd
 import os
@@ -32,23 +31,17 @@ NEON_PASSWORD = "npg_uIt2cPJTE4aL"
 
 def get_neon_connection():
     return psycopg2.connect(
-        host=NEON_HOST,
-        port=NEON_PORT,
-        database=NEON_DATABASE,
-        user=NEON_USER,
-        password=NEON_PASSWORD,
-        sslmode="require"
+        host=NEON_HOST, port=NEON_PORT, database=NEON_DATABASE,
+        user=NEON_USER, password=NEON_PASSWORD, sslmode="require"
     )
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 def clean_value(val):
-    if pd.isna(val) or val == '':
-        return None
+    if pd.isna(val) or val == '': return None
     return str(val).strip()
 
 def normalize_well_name(name):
-    if not name:
-        return ''
+    if not name: return ''
     name = str(name).strip().upper()
     name = ' '.join(name.split())
     for prefix in ['BPX_', 'BPX ', 'FME_', 'FME ', 'BRAVO KILO ']:
@@ -59,65 +52,42 @@ def normalize_well_name(name):
 def find_well_id(well_name_raw):
     well_name_norm = normalize_well_name(well_name_raw)
     logger.info(f"Normalized well name: '{well_name_norm}' (original: '{well_name_raw}')")
-
     conn = get_neon_connection()
     cur = conn.cursor()
-
-    # 1. Exact original
     cur.execute('SELECT id, well_name FROM "Wells" WHERE lower(well_name) = lower(%s)', (well_name_raw.strip(),))
     row = cur.fetchone()
     if row:
-        cur.close()
-        conn.close()
-        return row[0], row[1], "exact original"
-
-    # 2. Exact normalized
+        cur.close(); conn.close(); return row[0], row[1], "exact original"
     cur.execute('SELECT id, well_name FROM "Wells" WHERE well_name = %s', (well_name_norm,))
     row = cur.fetchone()
     if row:
-        cur.close()
-        conn.close()
-        return row[0], row[1], "exact normalized"
-
-    # 3. Partial match
+        cur.close(); conn.close(); return row[0], row[1], "exact normalized"
     cur.execute('SELECT id, well_name FROM "Wells" WHERE well_name ILIKE %s LIMIT 1', (f"%{well_name_norm}%",))
     row = cur.fetchone()
     if row:
-        cur.close()
-        conn.close()
-        return row[0], row[1], "partial"
-
-    cur.close()
-    conn.close()
+        cur.close(); conn.close(); return row[0], row[1], "partial"
+    cur.close(); conn.close()
     return None, None, None
 
 def upload_pason_codes(file_path):
     filename = os.path.basename(file_path)
     logger.info(f"Processing Pason file: {filename}")
 
-    well_name_raw = filename.replace('.xlsx', '').replace('.csv', '').replace('_', ' ').strip()
+    well_name_raw = filename.replace('.xlsx','').replace('.csv','').replace('_',' ').strip()
     well_id, matched_name, match_type = find_well_id(well_name_raw)
-
     if well_id is None:
         logger.warning(f"No match for '{well_name_raw}' in Wells")
         return 0
-
     logger.info(f"Matched '{well_name_raw}' → '{matched_name}' (ID {well_id}) via {match_type}")
 
-    # Load data
     try:
         if filename.lower().endswith('.csv'):
             df = pd.read_csv(file_path, header=0)
         else:
             df = pd.read_excel(file_path, sheet_name='Sheet1', header=0)
-
-        # Ensure Date column is parsed as date
         if 'Date' in df.columns:
             df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
-
         logger.info(f"Loaded {len(df)} Pason records from {filename}")
-        logger.info(f"Detected columns: {list(df.columns)}")
-
     except Exception as e:
         logger.error(f"Failed to load {filename}: {e}")
         return 0
@@ -125,7 +95,6 @@ def upload_pason_codes(file_path):
     inserted = 0
     skipped = 0
     batch = []
-
     for idx, row in df.iterrows():
         rig_name = clean_value(row.get('Rig name'))
         well_name_from_file = clean_value(row.get('Well name'))
@@ -145,26 +114,12 @@ def upload_pason_codes(file_path):
             skipped += 1
             continue
 
-        # Combine rig + well if needed
         if rig_name and well_name_from_file:
             well_name_from_file = f"{rig_name} {well_name_from_file}".strip()
 
-        pason_data = (
-            well_id,
-            rig_name,
-            well_name_from_file,
-            pason_date,          # ← now correctly in the date position
-            shift,
-            sequence,
-            from_time,
-            to_time,
-            hours,
-            time_code,
-            time_code_desc,
-            sub_code,
-            sub_code_desc,
-            details
-        )
+        pason_data = (well_id, rig_name, well_name_from_file, pason_date, shift, sequence,
+                      from_time, to_time, hours, time_code, time_code_desc, sub_code,
+                      sub_code_desc, details)
 
         batch.append(pason_data)
 
@@ -181,19 +136,16 @@ def upload_pason_codes(file_path):
                     ) VALUES %s
                     ON CONFLICT ON CONSTRAINT unique_pason_time_block DO NOTHING
                     """,
-                    batch
-                )
+                    batch)
                 conn.commit()
                 inserted += len(batch)
             except Exception as e:
                 logger.error(f"Batch insert failed: {str(e)}")
                 skipped += len(batch)
             finally:
-                cur.close()
-                conn.close()
+                cur.close(); conn.close()
             batch = []
 
-    # Final batch
     if batch:
         conn = get_neon_connection()
         cur = conn.cursor()
@@ -207,30 +159,32 @@ def upload_pason_codes(file_path):
                 ) VALUES %s
                 ON CONFLICT ON CONSTRAINT unique_pason_time_block DO NOTHING
                 """,
-                batch
-            )
+                batch)
             conn.commit()
             inserted += len(batch)
         except Exception as e:
             logger.error(f"Final batch insert failed: {str(e)}")
             skipped += len(batch)
         finally:
-            cur.close()
-            conn.close()
+            cur.close(); conn.close()
 
     logger.info(f"Inserted {inserted} Pason rows for {filename} (well_id {well_id}), skipped {skipped}")
     return inserted
 
-def process_folder(folder_path):
-    print(f"\n=== Importing Pason Codes: {folder_path} ===")
-    logger.info(f"Batch started for Pason Codes: {folder_path}")
+def process_folder():
+    print("\n=== Importing Pason Codes ===")
+    logger.info("Batch started for Pason Codes")
 
-    files = [os.path.join(root, f) for root, dirs, files in os.walk(folder_path)
-             for f in files if f.lower().endswith(('.xlsx', '.csv'))]
+    files = []
+    for root, dirs, filenames in os.walk("uploads"):
+        for f in filenames:
+            if f.lower().startswith('pason_') or f.lower().startswith('pason '):
+                if f.lower().endswith(('.csv', '.xlsx')):
+                    files.append(os.path.join(root, f))
 
     total_files = len(files)
-    print(f"Found {total_files} files")
-    logger.info(f"Found {total_files} files")
+    print(f"Found {total_files} Pason files")
+    logger.info(f"Found {total_files} Pason files")
 
     if total_files == 0:
         print("No files found.")
@@ -248,8 +202,7 @@ def process_folder(folder_path):
     logger.info(f"Batch complete. Total inserted: {total_inserted}")
 
 def run_pason_import():
-    folder = os.path.join("uploads", "pason")
-    process_folder(folder)
+    process_folder()
     return "Pason codes import completed successfully"
 
 if __name__ == "__main__":
