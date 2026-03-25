@@ -1,5 +1,5 @@
 # import_pason_codesGH.py
-# SUPER-ROBUST: recursively finds ANY Pason_* file anywhere under uploads/
+# FINAL DEBUG + ACCURATE UI MESSAGE VERSION
 
 import pandas as pd
 import os
@@ -175,12 +175,20 @@ def process_folder():
     print("\n=== Importing Pason Codes ===")
     logger.info("Batch started for Pason Codes")
 
+    # === MAXIMUM DEBUG: show everything Render sees ===
+    logger.info(f"DEBUG: Current working directory = {os.getcwd()}")
+    logger.info(f"DEBUG: uploads folder exists? {os.path.exists('uploads')}")
+    if os.path.exists('uploads'):
+        logger.info(f"DEBUG: Top-level uploads contents = {os.listdir('uploads')}")
+
     files = []
     for root, dirs, filenames in os.walk("uploads"):
+        logger.info(f"DEBUG: Walking folder → {root} | files = {filenames}")
         for f in filenames:
-            if f.lower().startswith('pason_') or f.lower().startswith('pason '):
-                if f.lower().endswith(('.csv', '.xlsx')):
-                    files.append(os.path.join(root, f))
+            if 'pason' in f.lower() and f.lower().endswith(('.csv', '.xlsx')):
+                full_path = os.path.join(root, f)
+                files.append(full_path)
+                logger.info(f"DEBUG: FOUND Pason file → {full_path}")
 
     total_files = len(files)
     print(f"Found {total_files} Pason files")
@@ -188,7 +196,7 @@ def process_folder():
 
     if total_files == 0:
         print("No files found.")
-        return
+        return 0
 
     total_inserted = 0
     with tqdm(total=total_files, desc="Pason Codes", unit="file") as pbar:
@@ -200,10 +208,15 @@ def process_folder():
     print(f"\n=== Complete ===")
     print(f"Total Pason rows inserted: {total_inserted}")
     logger.info(f"Batch complete. Total inserted: {total_inserted}")
+    return total_inserted
 
 def run_pason_import():
-    process_folder()
-    return "Pason codes import completed successfully"
+    inserted = process_folder()
+    if inserted > 0:
+        msg = f"Pason codes import completed successfully ({inserted} rows inserted)"
+    else:
+        msg = "Pason codes import completed — but 0 files found (check Render log for DEBUG details)"
+    return msg
 
 if __name__ == "__main__":
     run_pason_import()
