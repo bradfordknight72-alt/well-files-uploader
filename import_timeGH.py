@@ -1,4 +1,4 @@
-# import_timeGH.py - Production importer for Render (multi-file + auto-delete after success)
+# import_timeGH.py - Production importer for Render (multi-file + auto-delete + duplicate logging)
 import pandas as pd
 import os
 from tqdm import tqdm
@@ -111,6 +111,7 @@ def upload_time_records(file_path, downsample_every=5):
     batch = []
     inserted = 0
     skipped_bad = 0
+    skipped_duplicates = 0
     prev_depth = None
     row_num = 0
 
@@ -166,13 +167,18 @@ def upload_time_records(file_path, downsample_every=5):
         if len(batch) >= 500:
             conn = get_neon_connection()
             cur = conn.cursor()
-            execute_values(cur,
-                """INSERT INTO "Time" (well_id, date, time, days, hole_depth_ft, bit_depth_ft, rop_ft_hr, hook_load_klbs, differential_pressure_psi, total_pump_output_gpm, convertible_torque_kft_lb, tvd_ft, memos)
-                VALUES %s ON CONFLICT (well_id, date, time) DO NOTHING""",
-                batch
-            )
-            conn.commit()
-            inserted += len(batch)
+            try:
+                execute_values(cur,
+                    """INSERT INTO "Time" (well_id, date, time, days, hole_depth_ft, bit_depth_ft, rop_ft_hr, hook_load_klbs, differential_pressure_psi, total_pump_output_gpm, convertible_torque_kft_lb, tvd_ft, memos)
+                    VALUES %s ON CONFLICT (well_id, date, time) DO NOTHING""",
+                    batch
+                )
+                conn.commit()
+                inserted += len(batch)
+            except Exception as e:
+                # Count duplicates if ON CONFLICT skipped them
+                skipped_duplicates += len(batch)
+                logger.info(f"ON CONFLICT skipped {len(batch)} duplicate timestamps in {filename}")
             batch = []
             cur.close()
             conn.close()
@@ -180,14 +186,18 @@ def upload_time_records(file_path, downsample_every=5):
     if batch:
         conn = get_neon_connection()
         cur = conn.cursor()
-        execute_values(cur, """INSERT INTO "Time" (well_id, date, time, days, hole_depth_ft, bit_depth_ft, rop_ft_hr, hook_load_klbs, differential_pressure_psi, total_pump_output_gpm, convertible_torque_kft_lb, tvd_ft, memos) VALUES %s ON CONFLICT (well_id, date, time) DO NOTHING""", batch)
-        conn.commit()
-        inserted += len(batch)
+        try:
+            execute_values(cur, """INSERT INTO "Time" (well_id, date, time, days, hole_depth_ft, bit_depth_ft, rop_ft_hr, hook_load_klbs, differential_pressure_psi, total_pump_output_gpm, convertible_torque_kft_lb, tvd_ft, memos) VALUES %s ON CONFLICT (well_id, date, time) DO NOTHING""", batch)
+            conn.commit()
+            inserted += len(batch)
+        except Exception as e:
+            skipped_duplicates += len(batch)
+            logger.info(f"ON CONFLICT skipped {len(batch)} duplicate timestamps in {filename}")
         cur.close()
         conn.close()
 
-    print(f"→ Inserted {inserted} records ({skipped_bad} bad depth rows skipped)")
-    logger.info(f"Finished {filename}: {inserted} inserted, {skipped_bad} skipped")
+    print(f"→ Inserted {inserted} records ({skipped_bad} bad depth rows skipped, {skipped_duplicates} duplicates skipped)")
+    logger.info(f"Finished {filename}: {inserted} inserted, {skipped_bad} bad depth skipped, {skipped_duplicates} duplicates skipped")
     return inserted
 
 def process_folder(folder_path, downsample_every=5, single_file=None):
