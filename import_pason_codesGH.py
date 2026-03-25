@@ -1,5 +1,5 @@
 # import_pason_codesGH.py
-# FINAL VERSION: strips Pason_ prefix + accurate UI message
+# FINAL PRODUCTION VERSION: auto-deletes files after successful import (like timeGH.py)
 
 import pandas as pd
 import os
@@ -44,14 +44,10 @@ def normalize_well_name(name):
     if not name: return ''
     name = str(name).strip().upper()
     name = ' '.join(name.split())
-    
-    # NEW: strip Pason prefix (this was the missing piece)
     for prefix in ['PASON_', 'PASON ', 'Pason_', 'Pason ', 'PASON-']:
         if name.startswith(prefix):
             name = name[len(prefix):].strip()
             break
-    
-    # existing prefixes
     for prefix in ['BPX_', 'BPX ', 'FME_', 'FME ', 'BRAVO KILO ']:
         if name.startswith(prefix):
             name = name[len(prefix):].strip()
@@ -61,7 +57,6 @@ def normalize_well_name(name):
 def find_well_id(well_name_raw):
     well_name_norm = normalize_well_name(well_name_raw)
     logger.info(f"Normalized well name: '{well_name_norm}' (original: '{well_name_raw}')")
-    
     conn = get_neon_connection()
     cur = conn.cursor()
     cur.execute('SELECT id, well_name FROM "Wells" WHERE lower(well_name) = lower(%s)', (well_name_raw.strip(),))
@@ -179,6 +174,15 @@ def upload_pason_codes(file_path):
             cur.close(); conn.close()
 
     logger.info(f"Inserted {inserted} Pason rows for {filename} (well_id {well_id}), skipped {skipped}")
+
+    # AUTO-PURGE: delete the file only after successful import
+    if inserted > 0:
+        try:
+            os.remove(file_path)
+            logger.info(f"🗑️ Auto-deleted successfully imported file: {filename}")
+        except Exception as e:
+            logger.warning(f"Could not delete {filename}: {e}")
+
     return inserted
 
 def process_folder():
@@ -217,7 +221,7 @@ def run_pason_import():
     if inserted > 0:
         return f"Pason codes import completed successfully ({inserted} rows inserted)"
     else:
-        return "Pason codes import completed — 0 files found (check Render log)"
+        return "Pason codes import completed — 0 files found"
 
 if __name__ == "__main__":
     run_pason_import()
