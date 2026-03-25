@@ -1,5 +1,5 @@
 # import_pason_codesGH.py
-# FINAL DEBUG + ACCURATE UI MESSAGE VERSION
+# FINAL VERSION: strips Pason_ prefix + accurate UI message
 
 import pandas as pd
 import os
@@ -44,14 +44,24 @@ def normalize_well_name(name):
     if not name: return ''
     name = str(name).strip().upper()
     name = ' '.join(name.split())
+    
+    # NEW: strip Pason prefix (this was the missing piece)
+    for prefix in ['PASON_', 'PASON ', 'Pason_', 'Pason ', 'PASON-']:
+        if name.startswith(prefix):
+            name = name[len(prefix):].strip()
+            break
+    
+    # existing prefixes
     for prefix in ['BPX_', 'BPX ', 'FME_', 'FME ', 'BRAVO KILO ']:
         if name.startswith(prefix):
             name = name[len(prefix):].strip()
+            break
     return name
 
 def find_well_id(well_name_raw):
     well_name_norm = normalize_well_name(well_name_raw)
     logger.info(f"Normalized well name: '{well_name_norm}' (original: '{well_name_raw}')")
+    
     conn = get_neon_connection()
     cur = conn.cursor()
     cur.execute('SELECT id, well_name FROM "Wells" WHERE lower(well_name) = lower(%s)', (well_name_raw.strip(),))
@@ -78,7 +88,7 @@ def upload_pason_codes(file_path):
     if well_id is None:
         logger.warning(f"No match for '{well_name_raw}' in Wells")
         return 0
-    logger.info(f"Matched '{well_name_raw}' → '{matched_name}' (ID {well_id}) via {match_type}")
+    logger.info(f"✅ MATCHED '{well_name_raw}' → '{matched_name}' (ID {well_id}) via {match_type}")
 
     try:
         if filename.lower().endswith('.csv'):
@@ -175,20 +185,12 @@ def process_folder():
     print("\n=== Importing Pason Codes ===")
     logger.info("Batch started for Pason Codes")
 
-    # === MAXIMUM DEBUG: show everything Render sees ===
-    logger.info(f"DEBUG: Current working directory = {os.getcwd()}")
-    logger.info(f"DEBUG: uploads folder exists? {os.path.exists('uploads')}")
-    if os.path.exists('uploads'):
-        logger.info(f"DEBUG: Top-level uploads contents = {os.listdir('uploads')}")
-
     files = []
     for root, dirs, filenames in os.walk("uploads"):
-        logger.info(f"DEBUG: Walking folder → {root} | files = {filenames}")
         for f in filenames:
             if 'pason' in f.lower() and f.lower().endswith(('.csv', '.xlsx')):
                 full_path = os.path.join(root, f)
                 files.append(full_path)
-                logger.info(f"DEBUG: FOUND Pason file → {full_path}")
 
     total_files = len(files)
     print(f"Found {total_files} Pason files")
@@ -213,10 +215,9 @@ def process_folder():
 def run_pason_import():
     inserted = process_folder()
     if inserted > 0:
-        msg = f"Pason codes import completed successfully ({inserted} rows inserted)"
+        return f"Pason codes import completed successfully ({inserted} rows inserted)"
     else:
-        msg = "Pason codes import completed — but 0 files found (check Render log for DEBUG details)"
-    return msg
+        return "Pason codes import completed — 0 files found (check Render log)"
 
 if __name__ == "__main__":
     run_pason_import()
