@@ -219,66 +219,211 @@ def upload_file(file_path):
     # ── Mud Properties Water ───────────────────────────────────────────────
     mud_water_header_row = find_section_start(df, 'Mud Water|Properties - water|Properties - Water', column=0)
     if mud_water_header_row is None:
-        print("→ Could not find 'Mud Water' header → skipping Mud Properties Water")
+        print("→ Mud Properties Water header not found → skipping")
     else:
-        print(f"→ Found 'Mud Water' header at row {mud_water_header_row} (0-based)")
+        print(f"→ Found Mud Water at row {mud_water_header_row}")
         mud_water_start = mud_water_header_row + 1
         mud_water_nrows = 0
         for i in range(mud_water_start, len(df)):
             val = df.iloc[i, 0]
             if pd.isna(val):
                 break
-            cleaned = str(clean_value(val)).strip()
+            cleaned = str(clean_value(val)).strip().lower()
             if cleaned == '' or not cleaned.replace('.', '').isdigit():
+                row_text_a = str(df.iloc[i, 0]).lower()
+                row_text_b = str(df.iloc[i, 1]).lower() if len(df.columns) > 1 else ''
+                rheo_markers = ['rheology', 'rheo', 'gel str', 'rpm']
+                if any(marker in row_text_a or marker in row_text_b for marker in rheo_markers):
+                    break
                 if mud_water_nrows > 0:
                     break
                 continue
+            try:
+                rpt_num = int(cleaned.split('.')[0]) if '.' in cleaned else int(cleaned)
+                if rpt_num > 200:
+                    break
+            except ValueError:
+                continue
             mud_water_nrows += 1
         try:
-            mud_water_df = pd.read_excel(file_path, sheet_name='Sheet1', skiprows=mud_water_header_row, nrows=mud_water_nrows + 5, header=0, usecols="A:Z")
-            mud_water_df.columns = [col.strip().replace('_x000D_\n', '').replace('\n', ' ').replace(' (gal)', '_gal').replace(' (lb/gal)', '_lb_gal').replace(' (lb/bbl)', '_lb_bbl').replace(' (ppg)', '_ppg').replace(' (lbm/bbl)', '_lbm_bbl').replace('(', '').replace(')', '').strip() for col in mud_water_df.columns]
-
-            inserted = 0
-            for idx, row in mud_water_df.iterrows():
-                data = {
+            mud_water_df = pd.read_excel(file_path, sheet_name='Sheet1', skiprows=mud_water_header_row + 1, nrows=mud_water_nrows + 2, header=0, usecols="A:Z")
+            mud_water_df.columns = [col.strip().replace('_x000D_', '').replace('\n', ' ').replace('\r', '').replace('  ', ' ').replace(' (', '_(').replace(' )', ')').replace('mg/L', '_mg_l').replace('ppm', '_ppm').replace('%', '_pct').replace('CAom', 'caom').replace('Volt', '_volt').replace('Aw', '_aw').replace('cc/cc', '_cc').replace('pom', '').replace('1/32in', '_1_32in').strip() for col in mud_water_df.columns]
+            rename_map = {
+                'Rpt No.': 'rpt_no', 'Date': 'date', 'MD (ft)': 'md_ft', 'Sample from': 'sample_from',
+                'MW (ppg)': 'mw_ppg', 'Funnel visc._(sec/qt)': 'funnel_visc_sec_qt', 'PV (cP)': 'pv_cp',
+                'YP (lbf/100ft2)': 'yp_lbf_100ft2', '6 RPM': '_6_rpm', 'API filtrate (ml/30min)': 'api_filtrate_ml_30min',
+                'API cake thickness (1/32in)': 'api_cake_thickness_1_32in', 'LGS (%)': 'lgs_pct',
+                'Solids (%)': 'solids_pct', 'Oil (%)': 'oil_pct', 'Water (%)': 'water_pct',
+                'Sand content (%)': 'sand_content_pct', 'MBT capacity (lb/bbl)': 'mbt_capacity_lb_bbl',
+                'pH': 'ph', 'Mud alkalinity (Pm) (ml)': 'mud_alkalinity_pm_ml',
+                'Filtrate alkalinity (Pf) (ml)': 'filtrate_alkalinity_pf_ml',
+                'Filtrate alkalinity (Mf) (ml)': 'filtrate_alkalinity_mf_ml',
+                'Calcium (mg/L)': 'calcium_mg_l', 'Chlorides (mg/L)': 'chlorides_mg_l',
+                'Total hardness (mg/L)': 'total_hardness_mg_l', 'Excess lime (lb/bbl)': 'excess_lime_lb_bbl',
+                'Fine LCM (lb/bbl)': 'fine_lcm_lb_bbl', 'Coarse LCM (lb/bbl)': 'coarse_lcm_lb_bbl'
+            }
+            mud_water_df = mud_water_df.rename(columns=rename_map)
+            rename_fixes = {
+                'MD_(ft)': 'md_ft', 'MW_(ppg)': 'mw_ppg', 'PV_(cP)': 'pv_cp', 'YP_(lbf/100ft2)': 'yp_lbf_100ft2',
+                'API filtrate_(ml/30min)': 'api_filtrate_ml_30min', 'API cake thickness_(1/32in)': 'api_cake_thickness_1_32in',
+                'LGS_(_pct)': 'lgs_pct', 'Solids_(_pct)': 'solids_pct', 'Oil_(_pct)': 'oil_pct',
+                'Water_(_pct)': 'water_pct', 'Sand content_(_pct)': 'sand_content_pct',
+                'MBT capacity_(_lb_bbl)': 'mbt_capacity_lb_bbl', 'Mud alkalinity_(Pm)_(ml)': 'mud_alkalinity_pm_ml',
+                'Filtrate alkalinity_(Pf)_(ml)': 'filtrate_alkalinity_pf_ml',
+                'Filtrate alkalinity_(Mf)_(ml)': 'filtrate_alkalinity_mf_ml',
+                'Calcium_(mg/L)': 'calcium_mg_l', 'Chlorides_(mg/L)': 'chlorides_mg_l',
+                'Total hardness_(mg/L)': 'total_hardness_mg_l', 'Excess lime_(lb/bbl)': 'excess_lime_lb_bbl',
+                'Fine LCM_(lb/bbl)': 'fine_lcm_lb_bbl', 'Coarse LCM_(lb/bbl)': 'coarse_lcm_lb_bbl'
+            }
+            mud_water_df = mud_water_df.rename(columns=rename_fixes)
+            inserted_w = 0
+            for _, row in mud_water_df.iterrows():
+                rpt = clean_value(row.get('rpt_no'))
+                if rpt is None or not str(rpt).strip().replace('.', '').isdigit():
+                    continue
+                water_data = {
                     "well_id": well_id,
-                    "rpt_no": safe_int(row.get('Rpt No.')),
-                    "date": clean_value(row.get('Date')),
-                    "md_ft": safe_float(row.get('MD_ft')),
-                    "sample_from": clean_value(row.get('Sample from')),
-                    "mw_ppg": safe_float(row.get('MW_ppg')),
-                    "funnel_visc_sec_qt": safe_float(row.get('Funnel visc._sec_qt')),
-                    "pv_cp": safe_float(row.get('PV_cp')),
-                    "yp_lbf_100ft2": safe_float(row.get('YP_lbf_100ft2')),
-                    "_6_rpm": safe_float(row.get('6_RPM')),
-                    "api_filtrate_ml_30min": safe_float(row.get('API filtrate_ml_30min')),
-                    "api_cake_thickness_1_32in": safe_float(row.get('API cake thickness_1_32in')),
-                    "lgs_pct": safe_float(row.get('LGS_pct')),
-                    "solids_pct": safe_float(row.get('Solids_pct')),
-                    "oil_pct": safe_float(row.get('Oil_pct')),
-                    "water_pct": safe_float(row.get('Water_pct')),
-                    "sand_content_pct": safe_float(row.get('Sand_content_pct')),
-                    "mbt_capacity_lb_bbl": safe_float(row.get('MBT_capacity_lb_bbl')),
-                    "ph": safe_float(row.get('pH')),
-                    "mud_alkalinity_pm_ml": safe_float(row.get('Mud alkalinity_pm_ml')),
-                    "filtrate_alkalinity_pf_ml": safe_float(row.get('Filtrate alkalinity_pf_ml')),
-                    "filtrate_alkalinity_mf_ml": safe_float(row.get('Filtrate alkalinity_mf_ml')),
-                    "calcium_mg_l": safe_float(row.get('Calcium_mg_l')),
-                    "chlorides_mg_l": safe_float(row.get('Chlorides_mg_l')),
-                    "total_hardness_mg_l": safe_float(row.get('Total hardness_mg_l')),
-                    "excess_lime_lb_bbl": safe_float(row.get('Excess lime_lb_bbl')),
-                    "fine_lcm_lb_bbl": safe_float(row.get('Fine LCM_lb_bbl')),
-                    "coarse_lcm_lb_bbl": safe_float(row.get('Coarse LCM_lb_bbl')),
+                    "rpt_no": int(float(rpt)) if rpt else None,
+                    "date": clean_value(row.get('date')),
+                    "md_ft": safe_float(row.get('md_ft')),
+                    "sample_from": clean_value(row.get('sample_from')),
+                    "mw_ppg": safe_float(row.get('mw_ppg')),
+                    "funnel_visc_sec_qt": safe_float(row.get('funnel_visc_sec_qt')),
+                    "pv_cp": safe_float(row.get('pv_cp')),
+                    "yp_lbf_100ft2": safe_float(row.get('yp_lbf_100ft2')),
+                    "_6_rpm": safe_float(row.get('_6_rpm')),
+                    "api_filtrate_ml_30min": safe_float(row.get('api_filtrate_ml_30min')),
+                    "api_cake_thickness_1_32in": safe_float(row.get('api_cake_thickness_1_32in')),
+                    "lgs_pct": safe_float(row.get('lgs_pct')),
+                    "solids_pct": safe_float(row.get('solids_pct')),
+                    "oil_pct": safe_float(row.get('oil_pct')),
+                    "water_pct": safe_float(row.get('water_pct')),
+                    "sand_content_pct": safe_float(row.get('sand_content_pct')),
+                    "mbt_capacity_lb_bbl": safe_float(row.get('mbt_capacity_lb_bbl')),
+                    "ph": safe_float(row.get('ph')),
+                    "mud_alkalinity_pm_ml": safe_float(row.get('mud_alkalinity_pm_ml')),
+                    "filtrate_alkalinity_pf_ml": safe_float(row.get('filtrate_alkalinity_pf_ml')),
+                    "filtrate_alkalinity_mf_ml": safe_float(row.get('filtrate_alkalinity_mf_ml')),
+                    "calcium_mg_l": safe_float(row.get('calcium_mg_l')),
+                    "chlorides_mg_l": safe_float(row.get('chlorides_mg_l')),
+                    "total_hardness_mg_l": safe_float(row.get('total_hardness_mg_l')),
+                    "excess_lime_lb_bbl": safe_float(row.get('excess_lime_lb_bbl')),
+                    "fine_lcm_lb_bbl": safe_float(row.get('fine_lcm_lb_bbl')),
+                    "coarse_lcm_lb_bbl": safe_float(row.get('coarse_lcm_lb_bbl')),
                     "remarks": clean_value(row.get('Remarks'))
                 }
                 try:
-                    insert_row('MudPropertiesWater', data)
-                    inserted += 1
+                    insert_row('MudPropertiesWater', water_data)
+                    inserted_w += 1
                 except Exception as e:
-                    print(f"  Mud Properties Water insert failed on row {idx}: {e}")
-            print(f"→ Successfully inserted {inserted} Mud Properties Water rows")
+                    print(f"  Mud Properties Water insert failed for rpt_no {rpt}: {e}")
+            print(f"→ Inserted {inserted_w} mud properties water rows")
+        except Exception as e:
+            print(f"Failed to read or insert Mud Properties Water: {e}")    # ── Mud Properties Water ───────────────────────────────────────────────
+    mud_water_header_row = find_section_start(df, 'Mud Water|Properties - water|Properties - Water', column=0)
+    if mud_water_header_row is None:
+        print("→ Mud Properties Water header not found → skipping")
+    else:
+        print(f"→ Found Mud Water at row {mud_water_header_row}")
+        mud_water_start = mud_water_header_row + 1
+        mud_water_nrows = 0
+        for i in range(mud_water_start, len(df)):
+            val = df.iloc[i, 0]
+            if pd.isna(val):
+                break
+            cleaned = str(clean_value(val)).strip().lower()
+            if cleaned == '' or not cleaned.replace('.', '').isdigit():
+                row_text_a = str(df.iloc[i, 0]).lower()
+                row_text_b = str(df.iloc[i, 1]).lower() if len(df.columns) > 1 else ''
+                rheo_markers = ['rheology', 'rheo', 'gel str', 'rpm']
+                if any(marker in row_text_a or marker in row_text_b for marker in rheo_markers):
+                    break
+                if mud_water_nrows > 0:
+                    break
+                continue
+            try:
+                rpt_num = int(cleaned.split('.')[0]) if '.' in cleaned else int(cleaned)
+                if rpt_num > 200:
+                    break
+            except ValueError:
+                continue
+            mud_water_nrows += 1
+        try:
+            mud_water_df = pd.read_excel(file_path, sheet_name='Sheet1', skiprows=mud_water_header_row + 1, nrows=mud_water_nrows + 2, header=0, usecols="A:Z")
+            mud_water_df.columns = [col.strip().replace('_x000D_', '').replace('\n', ' ').replace('\r', '').replace('  ', ' ').replace(' (', '_(').replace(' )', ')').replace('mg/L', '_mg_l').replace('ppm', '_ppm').replace('%', '_pct').replace('CAom', 'caom').replace('Volt', '_volt').replace('Aw', '_aw').replace('cc/cc', '_cc').replace('pom', '').replace('1/32in', '_1_32in').strip() for col in mud_water_df.columns]
+            rename_map = {
+                'Rpt No.': 'rpt_no', 'Date': 'date', 'MD (ft)': 'md_ft', 'Sample from': 'sample_from',
+                'MW (ppg)': 'mw_ppg', 'Funnel visc._(sec/qt)': 'funnel_visc_sec_qt', 'PV (cP)': 'pv_cp',
+                'YP (lbf/100ft2)': 'yp_lbf_100ft2', '6 RPM': '_6_rpm', 'API filtrate (ml/30min)': 'api_filtrate_ml_30min',
+                'API cake thickness (1/32in)': 'api_cake_thickness_1_32in', 'LGS (%)': 'lgs_pct',
+                'Solids (%)': 'solids_pct', 'Oil (%)': 'oil_pct', 'Water (%)': 'water_pct',
+                'Sand content (%)': 'sand_content_pct', 'MBT capacity (lb/bbl)': 'mbt_capacity_lb_bbl',
+                'pH': 'ph', 'Mud alkalinity (Pm) (ml)': 'mud_alkalinity_pm_ml',
+                'Filtrate alkalinity (Pf) (ml)': 'filtrate_alkalinity_pf_ml',
+                'Filtrate alkalinity (Mf) (ml)': 'filtrate_alkalinity_mf_ml',
+                'Calcium (mg/L)': 'calcium_mg_l', 'Chlorides (mg/L)': 'chlorides_mg_l',
+                'Total hardness (mg/L)': 'total_hardness_mg_l', 'Excess lime (lb/bbl)': 'excess_lime_lb_bbl',
+                'Fine LCM (lb/bbl)': 'fine_lcm_lb_bbl', 'Coarse LCM (lb/bbl)': 'coarse_lcm_lb_bbl'
+            }
+            mud_water_df = mud_water_df.rename(columns=rename_map)
+            rename_fixes = {
+                'MD_(ft)': 'md_ft', 'MW_(ppg)': 'mw_ppg', 'PV_(cP)': 'pv_cp', 'YP_(lbf/100ft2)': 'yp_lbf_100ft2',
+                'API filtrate_(ml/30min)': 'api_filtrate_ml_30min', 'API cake thickness_(1/32in)': 'api_cake_thickness_1_32in',
+                'LGS_(_pct)': 'lgs_pct', 'Solids_(_pct)': 'solids_pct', 'Oil_(_pct)': 'oil_pct',
+                'Water_(_pct)': 'water_pct', 'Sand content_(_pct)': 'sand_content_pct',
+                'MBT capacity_(_lb_bbl)': 'mbt_capacity_lb_bbl', 'Mud alkalinity_(Pm)_(ml)': 'mud_alkalinity_pm_ml',
+                'Filtrate alkalinity_(Pf)_(ml)': 'filtrate_alkalinity_pf_ml',
+                'Filtrate alkalinity_(Mf)_(ml)': 'filtrate_alkalinity_mf_ml',
+                'Calcium_(mg/L)': 'calcium_mg_l', 'Chlorides_(mg/L)': 'chlorides_mg_l',
+                'Total hardness_(mg/L)': 'total_hardness_mg_l', 'Excess lime_(lb/bbl)': 'excess_lime_lb_bbl',
+                'Fine LCM_(lb/bbl)': 'fine_lcm_lb_bbl', 'Coarse LCM_(lb/bbl)': 'coarse_lcm_lb_bbl'
+            }
+            mud_water_df = mud_water_df.rename(columns=rename_fixes)
+            inserted_w = 0
+            for _, row in mud_water_df.iterrows():
+                rpt = clean_value(row.get('rpt_no'))
+                if rpt is None or not str(rpt).strip().replace('.', '').isdigit():
+                    continue
+                water_data = {
+                    "well_id": well_id,
+                    "rpt_no": int(float(rpt)) if rpt else None,
+                    "date": clean_value(row.get('date')),
+                    "md_ft": safe_float(row.get('md_ft')),
+                    "sample_from": clean_value(row.get('sample_from')),
+                    "mw_ppg": safe_float(row.get('mw_ppg')),
+                    "funnel_visc_sec_qt": safe_float(row.get('funnel_visc_sec_qt')),
+                    "pv_cp": safe_float(row.get('pv_cp')),
+                    "yp_lbf_100ft2": safe_float(row.get('yp_lbf_100ft2')),
+                    "_6_rpm": safe_float(row.get('_6_rpm')),
+                    "api_filtrate_ml_30min": safe_float(row.get('api_filtrate_ml_30min')),
+                    "api_cake_thickness_1_32in": safe_float(row.get('api_cake_thickness_1_32in')),
+                    "lgs_pct": safe_float(row.get('lgs_pct')),
+                    "solids_pct": safe_float(row.get('solids_pct')),
+                    "oil_pct": safe_float(row.get('oil_pct')),
+                    "water_pct": safe_float(row.get('water_pct')),
+                    "sand_content_pct": safe_float(row.get('sand_content_pct')),
+                    "mbt_capacity_lb_bbl": safe_float(row.get('mbt_capacity_lb_bbl')),
+                    "ph": safe_float(row.get('ph')),
+                    "mud_alkalinity_pm_ml": safe_float(row.get('mud_alkalinity_pm_ml')),
+                    "filtrate_alkalinity_pf_ml": safe_float(row.get('filtrate_alkalinity_pf_ml')),
+                    "filtrate_alkalinity_mf_ml": safe_float(row.get('filtrate_alkalinity_mf_ml')),
+                    "calcium_mg_l": safe_float(row.get('calcium_mg_l')),
+                    "chlorides_mg_l": safe_float(row.get('chlorides_mg_l')),
+                    "total_hardness_mg_l": safe_float(row.get('total_hardness_mg_l')),
+                    "excess_lime_lb_bbl": safe_float(row.get('excess_lime_lb_bbl')),
+                    "fine_lcm_lb_bbl": safe_float(row.get('fine_lcm_lb_bbl')),
+                    "coarse_lcm_lb_bbl": safe_float(row.get('coarse_lcm_lb_bbl')),
+                    "remarks": clean_value(row.get('Remarks'))
+                }
+                try:
+                    insert_row('MudPropertiesWater', water_data)
+                    inserted_w += 1
+                except Exception as e:
+                    print(f"  Mud Properties Water insert failed for rpt_no {rpt}: {e}")
+            print(f"→ Inserted {inserted_w} mud properties water rows")
         except Exception as e:
             print(f"Failed to read or insert Mud Properties Water: {e}")
+            
     # ── Mud Properties Oil ────────────────────────────────────────────────
     oil_header = find_section_start(df, 'Properties - oil|Properties -oil|Properties oil|Oil based mud', column=0)
     if oil_header is None:
