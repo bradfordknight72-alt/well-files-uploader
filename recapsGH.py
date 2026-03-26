@@ -447,7 +447,7 @@ def upload_file(file_path):
         print(f"→ Found Remarks at row {remarks_header}")
         remarks_start = remarks_header + 1
         remarks_nrows = 0
-        # No next section — go to end of sheet
+        # Count EVERY valid Rpt No. all the way to the end of the sheet
         for i in range(remarks_start, len(df)):
             val = df.iloc[i, 0]
             if pd.isna(val):
@@ -456,8 +456,9 @@ def upload_file(file_path):
             if cleaned == '' or not cleaned.replace('.', '').isdigit():
                 continue
             remarks_nrows += 1
+        print(f"→ Planning to read ~{remarks_nrows} remarks rows")
         try:
-            remarks_df = pd.read_excel(file_path, sheet_name='Sheet1', skiprows=remarks_header + 1, nrows=remarks_nrows + 2, header=0, usecols="A:D")
+            remarks_df = pd.read_excel(file_path, sheet_name='Sheet1', skiprows=remarks_header + 1, nrows=remarks_nrows + 5, header=0, usecols="A:D")
             remarks_df.columns = [col.strip().replace('_x000D_', '').replace('\n', ' ').replace('\r', '').replace('  ', ' ').replace('MD(ft)', 'md_ft').strip() for col in remarks_df.columns]
             rename_map = {'Rpt No.': 'rpt_no', 'Date': 'date', 'MD_(ft)': 'md_ft', 'Remarks': 'remarks'}
             remarks_df = remarks_df.rename(columns=rename_map)
