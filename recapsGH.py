@@ -387,7 +387,7 @@ def upload_file(file_path):
             if cleaned == '' or not cleaned.replace('.', '').isdigit():
                 row_text_a = str(df.iloc[i, 0]).lower()
                 row_text_b = str(df.iloc[i, 1]).lower() if len(df.columns) > 1 else ''
-                next_markers = ['mbt capacity', 'no data', 'yield point', 'plastic viscosity']
+                next_markers = ['mbt capacity', 'no data', 'yield point', 'plastic viscosity', 'solids']
                 if any(marker in row_text_a or marker in row_text_b for marker in next_markers):
                     break
                 if rheo_nrows > 0:
