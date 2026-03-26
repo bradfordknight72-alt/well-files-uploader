@@ -216,10 +216,10 @@ def upload_file(file_path):
         except Exception as e:
             print(f"Failed to read or insert Surveys: {e}")
 
-    # ── Mud Water ──────────────────────────────────────────────────────────
+    # ── Mud Properties Water ───────────────────────────────────────────────
     mud_water_header_row = find_section_start(df, 'Mud Water|Properties - water|Properties - Water', column=0)
     if mud_water_header_row is None:
-        print("→ Could not find 'Mud Water' header → skipping Mud Water")
+        print("→ Could not find 'Mud Water' header → skipping Mud Properties Water")
     else:
         print(f"→ Found 'Mud Water' header at row {mud_water_header_row} (0-based)")
         mud_water_start = mud_water_header_row + 1
@@ -239,15 +239,34 @@ def upload_file(file_path):
             mud_water_df.columns = [col.strip().replace('_x000D_\n', '').replace('\n', ' ').replace(' (gal)', '_gal').replace(' (lb/gal)', '_lb_gal').replace(' (lb/bbl)', '_lb_bbl').replace(' (ppg)', '_ppg').replace(' (lbm/bbl)', '_lbm_bbl').replace('(', '').replace(')', '').strip() for col in mud_water_df.columns]
             inserted = 0
             for idx, row in mud_water_df.iterrows():
-                data = {"well_id": well_id, "date": clean_value(row.get('Date')), "water_gal": safe_float(row.get('Water_gal')), "oil_gal": safe_float(row.get('Oil_gal')), "mud_weight_lb_gal": safe_float(row.get('Mud Weight_lb_gal')), "funnel_visc_sec_qt": safe_float(row.get('Funnel Visc_sec_qt')), "pv_cp": safe_float(row.get('PV_cp')), "yp_lb_100ft2": safe_float(row.get('YP_lb_100ft2')), "gels_10sec_10min": clean_value(row.get('Gels_10sec_10min')), "ph": safe_float(row.get('pH')), "chlorides_mg_l": safe_float(row.get('Chlorides_mg_l')), "calcium_mg_l": safe_float(row.get('Calcium_mg_l')), "retort_solids_percent": safe_float(row.get('Retort Solids_percent')), "low_grav_solids_percent": safe_float(row.get('Low Grav Solids_percent')), "high_grav_solids_percent": safe_float(row.get('High Grav Solids_percent')), "sand_percent": safe_float(row.get('Sand_percent')), "mbt_lb_bbl": safe_float(row.get('MBT_lb_bbl')), "remarks": clean_value(row.get('Remarks'))}
+                data = {
+                    "well_id": well_id,
+                    "date": clean_value(row.get('Date')),
+                    "water_gal": safe_float(row.get('Water_gal')),
+                    "oil_gal": safe_float(row.get('Oil_gal')),
+                    "mud_weight_lb_gal": safe_float(row.get('Mud Weight_lb_gal')),
+                    "funnel_visc_sec_qt": safe_float(row.get('Funnel Visc_sec_qt')),
+                    "pv_cp": safe_float(row.get('PV_cp')),
+                    "yp_lb_100ft2": safe_float(row.get('YP_lb_100ft2')),
+                    "gels_10sec_10min": clean_value(row.get('Gels_10sec_10min')),
+                    "ph": safe_float(row.get('pH')),
+                    "chlorides_mg_l": safe_float(row.get('Chlorides_mg_l')),
+                    "calcium_mg_l": safe_float(row.get('Calcium_mg_l')),
+                    "retort_solids_percent": safe_float(row.get('Retort Solids_percent')),
+                    "low_grav_solids_percent": safe_float(row.get('Low Grav Solids_percent')),
+                    "high_grav_solids_percent": safe_float(row.get('High Grav Solids_percent')),
+                    "sand_percent": safe_float(row.get('Sand_percent')),
+                    "mbt_lb_bbl": safe_float(row.get('MBT_lb_bbl')),
+                    "remarks": clean_value(row.get('Remarks'))
+                }
                 try:
-                    insert_row('MudWater', data)
+                    insert_row('MudPropertiesWater', data)   # ← FIXED TABLE NAME
                     inserted += 1
                 except Exception as e:
-                    print(f"  Mud Water insert failed on row {idx}: {e}")
-            print(f"→ Successfully inserted {inserted} Mud Water rows")
+                    print(f"  Mud Properties Water insert failed on row {idx}: {e}")
+            print(f"→ Successfully inserted {inserted} Mud Properties Water rows")
         except Exception as e:
-            print(f"Failed to read or insert Mud Water: {e}")
+            print(f"Failed to read or insert Mud Properties Water: {e}")
 
     # ── Mud Properties Oil ────────────────────────────────────────────────
     oil_header = find_section_start(df, 'Properties - oil|Properties -oil|Properties oil|Oil based mud', column=0)
