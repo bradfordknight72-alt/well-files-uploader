@@ -309,8 +309,7 @@ def upload_file(file_path):
                     "total_hardness_mg_l": safe_float(row.get('total_hardness_mg_l')),
                     "excess_lime_lb_bbl": safe_float(row.get('excess_lime_lb_bbl')),
                     "fine_lcm_lb_bbl": safe_float(row.get('fine_lcm_lb_bbl')),
-                    "coarse_lcm_lb_bbl": safe_float(row.get('coarse_lcm_lb_bbl')),
-                    "remarks": clean_value(row.get('Remarks'))
+                    "coarse_lcm_lb_bbl": safe_float(row.get('coarse_lcm_lb_bbl'))
                 }
                 try:
                     insert_row('MudPropertiesWater', water_data)
